@@ -1,6 +1,6 @@
-// import type { Issue, Epic, Subtask } from "@prisma/client";
+import type { Issue, Epic, Subtask } from "@prisma/client";
 
-// export type IssueWithRelations = Issue & {
-//   epic: Epic | null;
-//   subtasks: Subtask[];
-// };
+export type IssueWithRelations = Issue & {
+  epic: Epic | null;
+  subtasks: Subtask[];
+};

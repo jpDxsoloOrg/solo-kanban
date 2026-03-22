@@ -1,46 +1,38 @@
-import { prisma } from "@/lib/prisma";
-import { notFound } from "next/navigation";
-import { AppShell } from "@/components/layout/AppShell";
-import { Sidebar } from "@/components/layout/Sidebar";
-import { Board } from "@/components/board/Board";
+"use client";
 
-interface BoardPageProps {
-  params: Promise<{ projectId: string }>;
+import { IssueStatus } from "@prisma/client";
+import { Column } from "./Column";
+import type { IssueWithRelations } from "@/types";
+
+const COLUMNS: { status: IssueStatus; label: string }[] = [
+  { status: "OPEN", label: "Open" },
+  { status: "IN_PROGRESS", label: "In Progress" },
+  { status: "REVIEW", label: "Review" },
+  { status: "DONE", label: "Done" },
+];
+
+interface BoardProps {
+  issues: IssueWithRelations[];
 }
 
-export default async function BoardPage({ params }: BoardPageProps) {
-  const { projectId } = await params;
-
-  const project = await prisma.project.findUnique({
-    where: { id: projectId },
-    include: {
-      epics: true,
-      issues: {
-        include: {
-          epic: true,
-          subtasks: true,
-        },
-        orderBy: { order: "asc" },
-      },
-      _count: {
-        select: { epics: true, issues: true },
-      },
-    },
-  });
-
-  if (!project) notFound();
+export function Board({ issues }: BoardProps) {
+  const issuesByStatus = COLUMNS.map((col) => ({
+    ...col,
+    issues: issues.filter((issue) => issue.status === col.status),
+  }));
 
   return (
-    <AppShell
-      sidebar={
-        <Sidebar
-          projectName={project.name}
-          epicCount={project._count.epics}
-          issueCount={project._count.issues}
-        />
-      }
-    >
-      <Board issues={project.issues} />
-    </AppShell>
+    <div className="h-full p-4 overflow-x-auto">
+      <div className="grid grid-cols-4 gap-4 h-full min-w-[800px]">
+        {issuesByStatus.map((col) => (
+          <Column
+            key={col.status}
+            status={col.status}
+            label={col.label}
+            issues={col.issues}
+          />
+        ))}
+      </div>
+    </div>
   );
 }

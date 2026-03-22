@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { notFound } from "next/navigation";
 import { AppShell } from "@/components/layout/AppShell";
 import { Sidebar } from "@/components/layout/Sidebar";
+import { Board } from "@/components/board/Board";
 
 interface BoardPageProps {
   params: Promise<{ projectId: string }>;
@@ -39,9 +40,7 @@ export default async function BoardPage({ params }: BoardPageProps) {
         />
       }
     >
-      <div className="flex items-center justify-center h-full">
-        <p className="text-gray-500">Board coming soon.</p>
-      </div>
+      <Board issues={project.issues} />
     </AppShell>
   );
 }
