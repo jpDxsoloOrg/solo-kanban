@@ -19,9 +19,13 @@ interface BoardProps {
 
 export function Board({ issues: initialIssues }: BoardProps) {
   const [issues, setIssues] = useState(initialIssues);
+  const [isMoving, setIsMoving] = useState(false);
 
   const handleMoveIssue = useCallback(
     async (issueId: string, newStatus: IssueStatus, newOrder: number) => {
+      if (isMoving) return;
+      setIsMoving(true);
+
       // Snapshot for rollback
       const previousIssues = issues;
 
@@ -66,9 +70,12 @@ export function Board({ issues: initialIssues }: BoardProps) {
         console.error("Failed to move issue:", error);
         // Rollback on failure
         setIssues(previousIssues);
+      } finally {
+        setIsMoving(false);
       }
     },
-    [issues]
+    [issues, isMoving]
+    
   );
 
   const issuesByStatus = COLUMNS.map((col) => ({

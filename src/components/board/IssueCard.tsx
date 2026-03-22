@@ -3,11 +3,14 @@
 import { useRef, useEffect, useState } from "react";
 import { Card, CardContent } from "@dxsolo/ui";
 import type { IssueWithRelations } from "@/types";
-import { IssuePriority } from "@prisma/client";
-import { draggable } from "@atlaskit/pragmatic-drag-and-drop/element/adapter";
+import { IssuePriority, IssueStatus } from "@prisma/client";
+import { draggable, dropTargetForElements } from "@atlaskit/pragmatic-drag-and-drop/element/adapter";
+import { attachClosestEdge, extractClosestEdge } from "@atlaskit/pragmatic-drag-and-drop-hitbox/closest-edge";
+import type { Edge } from "@atlaskit/pragmatic-drag-and-drop-hitbox/closest-edge";
 
 interface IssueCardProps {
   issue: IssueWithRelations;
+  onMoveIssue: (issueId: string, newStatus: IssueStatus, newOrder: number) => void;
 }
 
 const priorityConfig: Record<
@@ -20,9 +23,10 @@ const priorityConfig: Record<
   LOW: { label: "Low", className: "bg-gray-100 text-gray-500" },
 };
 
-export function IssueCard({ issue }: IssueCardProps) {
+export function IssueCard({ issue, onMoveIssue }: IssueCardProps) {
   const ref = useRef<HTMLDivElement>(null);
   const [isDragging, setIsDragging] = useState(false);
+  const [closestEdge, setClosestEdge] = useState<Edge | null>(null);
   const priority = priorityConfig[issue.priority];
   const completedSubtasks = issue.subtasks.filter((s) => s.completed).length;
   const totalSubtasks = issue.subtasks.length;
@@ -31,7 +35,7 @@ export function IssueCard({ issue }: IssueCardProps) {
     const el = ref.current;
     if (!el) return;
 
-    return draggable({
+    const cleanupDrag = draggable({
       element: el,
       getInitialData: () => ({
         type: "card",
@@ -42,10 +46,70 @@ export function IssueCard({ issue }: IssueCardProps) {
       onDragStart: () => setIsDragging(true),
       onDrop: () => setIsDragging(false),
     });
-  }, [issue.id, issue.status, issue.order]);
+
+    const cleanupDrop = dropTargetForElements({
+      element: el,
+      getData: ({ input, element }) => {
+        return attachClosestEdge(
+          { type: "card", issueId: issue.id, status: issue.status, order: issue.order },
+          { input, element, allowedEdges: ["top", "bottom"] }
+        );
+      },
+      canDrop: ({ source }) => {
+        // Don't allow dropping on yourself
+        return source.data.type === "card" && source.data.issueId !== issue.id;
+      },
+      onDragEnter: ({ self }) => {
+        setClosestEdge(extractClosestEdge(self.data));
+      },
+      onDrag: ({ self }) => {
+        setClosestEdge(extractClosestEdge(self.data));
+      },
+      onDragLeave: () => {
+        setClosestEdge(null);
+      },
+      onDrop: ({ self, source }) => {
+        setClosestEdge(null);
+
+        const edge = extractClosestEdge(self.data);
+        const targetOrder = issue.order;
+        const sourceId = source.data.issueId as string;
+        const sourceStatus = source.data.status as IssueStatus;
+
+        // Calculate the new order based on which edge was closest
+        let newOrder: number;
+        if (edge === "top") {
+          newOrder = targetOrder;
+        } else {
+          newOrder = targetOrder + 1;
+        }
+
+        // If moving within the same column and the source was above the target,
+        // the target's order will shift after removal, so adjust
+        if (sourceStatus === issue.status) {
+          const sourceOrder = source.data.order as number;
+          if (sourceOrder < targetOrder) {
+            newOrder = newOrder - 1;
+          }
+        }
+
+        onMoveIssue(sourceId, issue.status, newOrder);
+      },
+    });
+
+    return () => {
+      cleanupDrag();
+      cleanupDrop();
+    };
+  }, [issue.id, issue.status, issue.order, onMoveIssue]);
 
   return (
-    <div ref={ref}>
+    <div ref={ref} className="relative">
+      {/* Drop indicator: top edge */}
+      {closestEdge === "top" && (
+        <div className="absolute top-0 left-0 right-0 h-0.5 bg-blue-500 -translate-y-1 rounded-full" />
+      )}
+
       <Card
         className={`cursor-grab hover:ring-2 hover:ring-blue-300 transition-shadow ${
           isDragging ? "opacity-40" : ""
@@ -95,6 +159,11 @@ export function IssueCard({ issue }: IssueCardProps) {
           )}
         </CardContent>
       </Card>
+
+      {/* Drop indicator: bottom edge */}
+      {closestEdge === "bottom" && (
+        <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-blue-500 translate-y-1 rounded-full" />
+      )}
     </div>
   );
 }

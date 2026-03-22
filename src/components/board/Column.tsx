@@ -48,13 +48,18 @@ export function Column({ status, label, issues, onMoveIssue }: ColumnProps) {
       canDrop: ({ source }) => source.data.type === "card",
       onDragEnter: () => setIsDraggedOver(true),
       onDragLeave: () => setIsDraggedOver(false),
-      onDrop: ({ source }) => {
+      onDrop: ({ source, location }) => {
         setIsDraggedOver(false);
+
+        // If the drop landed on a card within this column, let the card handle it
+        const dropTargets = location.current.dropTargets;
+        if (dropTargets.length > 1 && dropTargets[0].data.type === "card") {
+          return;
+        }
+
         const issueId = source.data.issueId as string;
         const sourceStatus = source.data.status as IssueStatus;
 
-        // Only handle drops directly on the column (not on a card within the column)
-        // Card-level drops are handled by the card drop targets
         if (sourceStatus === status) return;
 
         // Dropping on the column itself puts the card at the end
@@ -86,7 +91,7 @@ export function Column({ status, label, issues, onMoveIssue }: ColumnProps) {
       {/* Card list: scrollable, container query context */}
       <div className="flex-1 overflow-y-auto p-2 flex flex-col gap-2 @container">
         {issues.map((issue) => (
-          <IssueCard key={issue.id} issue={issue} />
+          <IssueCard key={issue.id} issue={issue} onMoveIssue={onMoveIssue} />
         ))}
 
         {issues.length === 0 && (

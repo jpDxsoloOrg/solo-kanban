@@ -40,7 +40,7 @@ export default async function BoardPage({ params }: BoardPageProps) {
         />
       }
     >
-      <Board issues={project.issues} />
+      <Board key={JSON.stringify(project.issues.map(i => i.id + i.status + i.order))} issues={project.issues} />
     </AppShell>
   );
 }
