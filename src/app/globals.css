@@ -1,5 +1,6 @@
 @import "tailwindcss";
 @import "@dxsolo/ui/theme.css";
+@plugin "@tailwindcss/typography";
 
 @source "../../node_modules/@dxsolo/ui";
 :root {

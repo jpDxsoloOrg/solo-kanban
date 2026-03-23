@@ -5,6 +5,10 @@ import { IssueStatus } from "@prisma/client";
 import { Column } from "./Column";
 import type { IssueWithRelations } from "@/types";
 import { moveIssue } from "@/actions/move-issue";
+import { IssueDetailModal } from "./IssueDetailModal";
+import { getIssue } from "@/actions/get-issue";
+
+
 
 const COLUMNS: { status: IssueStatus; label: string }[] = [
   { status: "OPEN", label: "Open" },
@@ -20,7 +24,7 @@ interface BoardProps {
 export function Board({ issues: initialIssues }: BoardProps) {
   const [issues, setIssues] = useState(initialIssues);
   const [isMoving, setIsMoving] = useState(false);
-
+  const [selectedIssue, setSelectedIssue] = useState<IssueWithRelations | null>(null);
   const handleMoveIssue = useCallback(
     async (issueId: string, newStatus: IssueStatus, newOrder: number) => {
       if (isMoving) return;
@@ -85,6 +89,21 @@ export function Board({ issues: initialIssues }: BoardProps) {
       .sort((a, b) => a.order - b.order),
   }));
 
+  const handleCloseDetail = useCallback(async () => {
+    if (!selectedIssue) return;
+  
+    try {
+      const fresh = await getIssue(selectedIssue.id);
+      if (fresh) {
+        setIssues((prev) => prev.map((i) => (i.id === fresh.id ? fresh : i)));
+      }
+    } catch (error) {
+      console.error("Failed to refresh issue:", error);
+    }
+  
+    setSelectedIssue(null);
+  }, [selectedIssue]);
+
   return (
     <div className="h-full p-4 overflow-x-auto">
       <div className="grid grid-cols-4 gap-4 h-full min-w-[800px]">
@@ -95,9 +114,20 @@ export function Board({ issues: initialIssues }: BoardProps) {
             label={col.label}
             issues={col.issues}
             onMoveIssue={handleMoveIssue}
+            onSelectIssue={setSelectedIssue}
           />
         ))}
       </div>
+      {selectedIssue && (
+        <IssueDetailModal
+          issue={issues.find((i) => i.id === selectedIssue.id) ?? selectedIssue}
+          onClose={handleCloseDetail}
+          onUpdate={(updated) => {
+            setIssues((prev) => prev.map((i) => (i.id === updated.id ? updated : i)));
+            setSelectedIssue(updated);
+          }}
+        />
+      )}
     </div>
   );
 }
