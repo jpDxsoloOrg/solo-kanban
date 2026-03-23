@@ -2,13 +2,12 @@
 
 import { useState, useCallback } from "react";
 import { IssueStatus } from "@prisma/client";
+import type { Epic } from "@prisma/client";
 import { Column } from "./Column";
 import type { IssueWithRelations } from "@/types";
 import { moveIssue } from "@/actions/move-issue";
 import { IssueDetailModal } from "./IssueDetailModal";
 import { getIssue } from "@/actions/get-issue";
-
-
 
 const COLUMNS: { status: IssueStatus; label: string }[] = [
   { status: "OPEN", label: "Open" },
@@ -19,79 +18,67 @@ const COLUMNS: { status: IssueStatus; label: string }[] = [
 
 interface BoardProps {
   issues: IssueWithRelations[];
+  projectId: string;
+  epics: Epic[];
 }
 
-export function Board({ issues: initialIssues }: BoardProps) {
+export function Board({ issues: initialIssues, projectId, epics }: BoardProps) {
   const [issues, setIssues] = useState(initialIssues);
   const [isMoving, setIsMoving] = useState(false);
   const [selectedIssue, setSelectedIssue] = useState<IssueWithRelations | null>(null);
+
   const handleMoveIssue = useCallback(
     async (issueId: string, newStatus: IssueStatus, newOrder: number) => {
       if (isMoving) return;
       setIsMoving(true);
 
-      // Snapshot for rollback
       const previousIssues = issues;
 
-      // Optimistic update
       setIssues((prev) => {
         const issue = prev.find((i) => i.id === issueId);
         if (!issue) return prev;
 
-        // Remove the issue from its current position
         const without = prev.filter((i) => i.id !== issueId);
-
-        // Get issues in the target column, sorted by order
         const targetColumnIssues = without
           .filter((i) => i.status === newStatus)
           .sort((a, b) => a.order - b.order);
 
-        // Clamp the order to valid range
         const clampedOrder = Math.min(newOrder, targetColumnIssues.length);
 
-        // Insert at the new position and re-index the target column
         targetColumnIssues.splice(clampedOrder, 0, {
           ...issue,
           status: newStatus,
           order: clampedOrder,
         });
 
-        // Re-index all items in the target column
         const reindexed = targetColumnIssues.map((item, index) => ({
           ...item,
           order: index,
         }));
 
-        // Rebuild the full issue list
         const otherIssues = without.filter((i) => i.status !== newStatus);
         return [...otherIssues, ...reindexed];
       });
 
-      // Persist to database
       try {
         await moveIssue(issueId, newStatus, newOrder);
       } catch (error) {
         console.error("Failed to move issue:", error);
-        // Rollback on failure
         setIssues(previousIssues);
       } finally {
         setIsMoving(false);
       }
     },
     [issues, isMoving]
-    
   );
 
-  const issuesByStatus = COLUMNS.map((col) => ({
-    ...col,
-    issues: issues
-      .filter((issue) => issue.status === col.status)
-      .sort((a, b) => a.order - b.order),
-  }));
+  const handleIssueCreated = useCallback((issue: IssueWithRelations) => {
+    setIssues((prev) => [...prev, issue]);
+  }, []);
 
   const handleCloseDetail = useCallback(async () => {
     if (!selectedIssue) return;
-  
+
     try {
       const fresh = await getIssue(selectedIssue.id);
       if (fresh) {
@@ -100,9 +87,16 @@ export function Board({ issues: initialIssues }: BoardProps) {
     } catch (error) {
       console.error("Failed to refresh issue:", error);
     }
-  
+
     setSelectedIssue(null);
   }, [selectedIssue]);
+
+  const issuesByStatus = COLUMNS.map((col) => ({
+    ...col,
+    issues: issues
+      .filter((issue) => issue.status === col.status)
+      .sort((a, b) => a.order - b.order),
+  }));
 
   return (
     <div className="h-full p-4 overflow-x-auto">
@@ -115,6 +109,9 @@ export function Board({ issues: initialIssues }: BoardProps) {
             issues={col.issues}
             onMoveIssue={handleMoveIssue}
             onSelectIssue={setSelectedIssue}
+            projectId={projectId}
+            epics={epics}
+            onIssueCreated={handleIssueCreated}
           />
         ))}
       </div>

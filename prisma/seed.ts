@@ -48,6 +48,7 @@ async function main() {
   // Create issues across all statuses
   const issues = [
     {
+      number: 1,
       title: "Initialize Next.js project",
       description: "Scaffold the app with create-next-app, install deps, configure Tailwind.",
       status: IssueStatus.DONE,
@@ -56,6 +57,7 @@ async function main() {
       epicId: setupEpic.id,
     },
     {
+      number: 2,
       title: "Set up Prisma schema",
       description: "Define models for Project, Epic, Issue, and Subtask. Run initial migration.",
       status: IssueStatus.DONE,
@@ -64,6 +66,7 @@ async function main() {
       epicId: setupEpic.id,
     },
     {
+      number: 3,
       title: "Build four-column board layout",
       description: "Use CSS Grid for the column layout. Each column represents a status.\n\n## Requirements\n- Responsive down to tablet\n- Scrollable columns when content overflows\n- Column headers show issue count",
       status: IssueStatus.IN_PROGRESS,
@@ -72,6 +75,7 @@ async function main() {
       epicId: boardEpic.id,
     },
     {
+      number: 4,
       title: "Design issue card component",
       description: "Cards show title, priority badge, epic label, and subtask progress.",
       status: IssueStatus.IN_PROGRESS,
@@ -80,6 +84,7 @@ async function main() {
       epicId: boardEpic.id,
     },
     {
+      number: 5,
       title: "Implement drag and drop",
       description: "Evaluate dnd-kit vs pragmatic-drag-and-drop. Need cross-column moves and within-column reordering.",
       status: IssueStatus.OPEN,
@@ -88,6 +93,7 @@ async function main() {
       epicId: dndEpic.id,
     },
     {
+      number: 6,
       title: "Add keyboard shortcuts",
       description: "Arrow keys to navigate, Enter to open detail, M to move between columns.",
       status: IssueStatus.OPEN,
@@ -96,6 +102,7 @@ async function main() {
       epicId: null,
     },
     {
+      number: 7,
       title: "Write seed data script",
       description: "Realistic sample data for development and screenshots.",
       status: IssueStatus.REVIEW,

@@ -118,7 +118,10 @@ export function IssueCard({ issue, onMoveIssue, onSelect }: IssueCardProps) {
       >
         <CardContent className="p-3">
           {/* Title */}
-          <h3 className="text-sm font-medium leading-snug">{issue.title}</h3>
+          <h3 className={`text-sm font-medium leading-snug ${issue.status === "DONE" ? "line-through text-muted-foreground" : ""}`}>
+            <span className="text-muted-foreground font-normal">#{issue.number}</span>{" "}
+            {issue.title}
+          </h3>
 
           {/* Meta row: priority + epic label */}
           <div className="flex items-center gap-2 mt-2 flex-wrap">

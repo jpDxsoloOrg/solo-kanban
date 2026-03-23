@@ -2,9 +2,11 @@
 
 import { useRef, useEffect, useState } from "react";
 import { IssueStatus } from "@prisma/client";
+import type { Epic } from "@prisma/client";
 import { IssueCard } from "./IssueCard";
 import type { IssueWithRelations } from "@/types";
 import { dropTargetForElements } from "@atlaskit/pragmatic-drag-and-drop/element/adapter";
+import { CreateIssueForm } from "./CreateIssueForm";
 
 interface ColumnProps {
   status: IssueStatus;
@@ -12,6 +14,9 @@ interface ColumnProps {
   issues: IssueWithRelations[];
   onMoveIssue: (issueId: string, newStatus: IssueStatus, newOrder: number) => void;
   onSelectIssue: (issue: IssueWithRelations) => void;
+  projectId: string;
+  epics: Epic[];
+  onIssueCreated: (issue: IssueWithRelations) => void;
 }
 
 const statusColors: Record<IssueStatus, string> = {
@@ -35,10 +40,10 @@ const emptyMessages: Record<IssueStatus, string> = {
   DONE: "No completed issues yet.",
 };
 
-export function Column({ status, label, issues, onMoveIssue, onSelectIssue }: ColumnProps) {
+export function Column({ status, label, issues, onMoveIssue, onSelectIssue, projectId, epics, onIssueCreated }: ColumnProps) {
   const ref = useRef<HTMLDivElement>(null);
   const [isDraggedOver, setIsDraggedOver] = useState(false);
-
+  const [showCreateForm, setShowCreateForm] = useState(false);
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
@@ -87,6 +92,13 @@ export function Column({ status, label, issues, onMoveIssue, onSelectIssue }: Co
           </span>
           <span className="text-xs text-gray-400">{issues.length}</span>
         </div>
+        <button
+          onClick={() => setShowCreateForm(true)}
+          className="text-gray-400 hover:text-gray-600 hover:bg-gray-200 rounded text-lg leading-none w-6 h-6 flex items-center justify-center transition-colors"
+          aria-label={`Add issue to ${label}`}
+        >
+          +
+        </button>
       </div>
 
       {/* Card list: scrollable, container query context */}
@@ -107,6 +119,16 @@ export function Column({ status, label, issues, onMoveIssue, onSelectIssue }: Co
               {emptyMessages[status]}
             </p>
           </div>
+        )}
+
+        {showCreateForm && (
+          <CreateIssueForm
+            projectId={projectId}
+            status={status}
+            epics={epics}
+            onCreated={onIssueCreated}
+            onCancel={() => setShowCreateForm(false)}
+          />
         )}
       </div>
     </div>

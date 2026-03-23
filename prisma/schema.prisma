@@ -48,6 +48,7 @@ model Epic {
 
 model Issue {
   id          String        @id @default(cuid())
+  number      Int
   title       String
   description String?       // markdown content
   status      IssueStatus   @default(OPEN)
@@ -64,6 +65,7 @@ model Issue {
 
   subtasks    Subtask[]
 
+  @@unique([projectId, number])
   @@index([projectId, status])
   @@index([epicId])
 }
