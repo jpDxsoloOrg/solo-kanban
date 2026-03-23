@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { redirect } from "next/navigation";
+import { CreateFirstProject } from "@/components/layout/CreateFirstProject";
 
 export default async function Home() {
   const project = await prisma.project.findFirst({
@@ -12,7 +13,7 @@ export default async function Home() {
 
   return (
     <main className="flex items-center justify-center h-screen">
-      <p className="text-gray-500">No projects yet. Create one to get started.</p>
+      <CreateFirstProject />
     </main>
   );
 }

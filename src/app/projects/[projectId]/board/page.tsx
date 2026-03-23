@@ -3,19 +3,24 @@ import { notFound } from "next/navigation";
 import { AppShell } from "@/components/layout/AppShell";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { Board } from "@/components/board/Board";
+import { getProjects } from "@/actions/project-actions";
 
 interface BoardPageProps {
   params: Promise<{ projectId: string }>;
+  searchParams: Promise<{ epic?: string }>;
 }
 
-export default async function BoardPage({ params }: BoardPageProps) {
+export default async function BoardPage({ params, searchParams }: BoardPageProps) {
   const { projectId } = await params;
+  const { epic: epicFilter } = await searchParams;
+  const projects = await getProjects();
 
   const project = await prisma.project.findUnique({
     where: { id: projectId },
     include: {
       epics: true,
       issues: {
+        where: epicFilter ? { epicId: epicFilter } : undefined,
         include: {
           epic: true,
           subtasks: true,
@@ -34,13 +39,19 @@ export default async function BoardPage({ params }: BoardPageProps) {
     <AppShell
       sidebar={
         <Sidebar
-          projectName={project.name}
-          epicCount={project._count.epics}
-          issueCount={project._count.issues}
+          projectId={projectId}
+          projects={projects}
+          epics={project.epics}
+          epicFilter={epicFilter ?? null}
         />
       }
     >
-      <Board key={JSON.stringify(project.issues.map(i => i.id + i.status + i.order))} issues={project.issues} />
+      <Board
+        key={JSON.stringify(project.issues.map((i) => i.id + i.status + i.order))}
+        issues={project.issues}
+        projectId={projectId}
+        epics={project.epics}
+      />
     </AppShell>
   );
 }
