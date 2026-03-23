@@ -11,6 +11,7 @@ import type { Edge } from "@atlaskit/pragmatic-drag-and-drop-hitbox/closest-edge
 interface IssueCardProps {
   issue: IssueWithRelations;
   onMoveIssue: (issueId: string, newStatus: IssueStatus, newOrder: number) => void;
+  onSelect: (issue: IssueWithRelations) => void;
 }
 
 const priorityConfig: Record<
@@ -23,7 +24,7 @@ const priorityConfig: Record<
   LOW: { label: "Low", className: "bg-gray-100 text-gray-500" },
 };
 
-export function IssueCard({ issue, onMoveIssue }: IssueCardProps) {
+export function IssueCard({ issue, onMoveIssue, onSelect }: IssueCardProps) {
   const ref = useRef<HTMLDivElement>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [closestEdge, setClosestEdge] = useState<Edge | null>(null);
@@ -104,7 +105,7 @@ export function IssueCard({ issue, onMoveIssue }: IssueCardProps) {
   }, [issue.id, issue.status, issue.order, onMoveIssue]);
 
   return (
-    <div ref={ref} className="relative">
+    <div ref={ref} className="relative" onClick={() => onSelect(issue)}>
       {/* Drop indicator: top edge */}
       {closestEdge === "top" && (
         <div className="absolute top-0 left-0 right-0 h-0.5 bg-blue-500 -translate-y-1 rounded-full" />

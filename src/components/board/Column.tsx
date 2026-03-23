@@ -11,6 +11,7 @@ interface ColumnProps {
   label: string;
   issues: IssueWithRelations[];
   onMoveIssue: (issueId: string, newStatus: IssueStatus, newOrder: number) => void;
+  onSelectIssue: (issue: IssueWithRelations) => void;
 }
 
 const statusColors: Record<IssueStatus, string> = {
@@ -34,7 +35,7 @@ const emptyMessages: Record<IssueStatus, string> = {
   DONE: "No completed issues yet.",
 };
 
-export function Column({ status, label, issues, onMoveIssue }: ColumnProps) {
+export function Column({ status, label, issues, onMoveIssue, onSelectIssue }: ColumnProps) {
   const ref = useRef<HTMLDivElement>(null);
   const [isDraggedOver, setIsDraggedOver] = useState(false);
 
@@ -91,7 +92,7 @@ export function Column({ status, label, issues, onMoveIssue }: ColumnProps) {
       {/* Card list: scrollable, container query context */}
       <div className="flex-1 overflow-y-auto p-2 flex flex-col gap-2 @container">
         {issues.map((issue) => (
-          <IssueCard key={issue.id} issue={issue} onMoveIssue={onMoveIssue} />
+          <IssueCard key={issue.id} issue={issue} onMoveIssue={onMoveIssue} onSelect={onSelectIssue} />
         ))}
 
         {issues.length === 0 && (
