@@ -1,0 +1,20 @@
+version: 1
+frontend:
+  phases:
+    preBuild:
+      commands:
+        - npm ci
+        - npx prisma generate
+        - npx prisma migrate deploy
+    build:
+      commands:
+        - env | grep -E '^(DATABASE_URL|DIRECT_DATABASE_URL)' | sed 's/=.*/=****/' || true
+        - npm run build
+  artifacts:
+    baseDirectory: .next
+    files:
+      - '**/*'
+  cache:
+    paths:
+      - node_modules/**/*
+      - .next/cache/**/*

@@ -2,6 +2,8 @@ import { prisma } from "@/lib/prisma";
 import { redirect } from "next/navigation";
 import { CreateFirstProject } from "@/components/layout/CreateFirstProject";
 
+export const dynamic = "force-dynamic";
+
 export default async function Home() {
   const project = await prisma.project.findFirst({
     orderBy: { createdAt: "asc" },
