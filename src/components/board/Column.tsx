@@ -7,6 +7,7 @@ import { IssueCard } from "./IssueCard";
 import type { IssueWithRelations } from "@/types";
 import { dropTargetForElements } from "@atlaskit/pragmatic-drag-and-drop/element/adapter";
 import { CreateIssueForm } from "./CreateIssueForm";
+import { Tooltip } from "@dxsolo/ui";
 
 interface ColumnProps {
   status: IssueStatus;
@@ -17,6 +18,8 @@ interface ColumnProps {
   projectId: string;
   epics: Epic[];
   onIssueCreated: (issue: IssueWithRelations) => void;
+  showCreateForm?: boolean;
+  onCreateFormChange?: (open: boolean) => void;
 }
 
 const statusColors: Record<IssueStatus, string> = {
@@ -40,10 +43,16 @@ const emptyMessages: Record<IssueStatus, string> = {
   DONE: "No completed issues yet.",
 };
 
-export function Column({ status, label, issues, onMoveIssue, onSelectIssue, projectId, epics, onIssueCreated }: ColumnProps) {
+export function Column({ status, label, issues, onMoveIssue, onSelectIssue, projectId, epics, onIssueCreated, showCreateForm: externalShowCreate, onCreateFormChange }: ColumnProps) {
   const ref = useRef<HTMLDivElement>(null);
   const [isDraggedOver, setIsDraggedOver] = useState(false);
-  const [showCreateForm, setShowCreateForm] = useState(false);
+  const [internalShowCreate, setInternalShowCreate] = useState(false);
+
+  const showCreateForm = externalShowCreate ?? internalShowCreate;
+  const setShowCreateForm = (val: boolean) => {
+    setInternalShowCreate(val);
+    onCreateFormChange?.(val);
+  };
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
@@ -78,27 +87,29 @@ export function Column({ status, label, issues, onMoveIssue, onSelectIssue, proj
   return (
     <div
       ref={ref}
-      className={`flex flex-col h-full min-h-0 rounded-lg bg-gray-50 border-t-2 ${statusBorderColors[status]} ${
+      className={`flex flex-col h-full min-h-0 rounded-lg bg-muted/50 border-t-2 ${statusBorderColors[status]} ${
         isDraggedOver ? "ring-2 ring-blue-300 bg-blue-50/50" : ""
       }`}
     >
       {/* Column header: sticky, never scrolls */}
-      <div className="flex items-center justify-between px-3 py-2 border-b border-gray-200">
+      <div className="flex items-center justify-between px-3 py-2 border-b border-border">
         <div className="flex items-center gap-2">
           <span
             className={`text-xs font-semibold px-2 py-0.5 rounded-full ${statusColors[status]}`}
           >
             {label}
           </span>
-          <span className="text-xs text-gray-400">{issues.length}</span>
+          <span className="text-xs text-muted-foreground">{issues.length}</span>
         </div>
-        <button
+        <Tooltip content={`Add issue to ${label}`}>
+          <button
           onClick={() => setShowCreateForm(true)}
           className="text-gray-400 hover:text-gray-600 hover:bg-gray-200 rounded text-lg leading-none w-6 h-6 flex items-center justify-center transition-colors"
           aria-label={`Add issue to ${label}`}
         >
           +
         </button>
+        </Tooltip>
       </div>
 
       {/* Card list: scrollable, container query context */}
@@ -112,10 +123,10 @@ export function Column({ status, label, issues, onMoveIssue, onSelectIssue, proj
             className={`flex items-center justify-center h-32 border-2 border-dashed rounded-lg ${
               isDraggedOver
                 ? "border-blue-300 bg-blue-50"
-                : "border-gray-200"
+                : "border-border"
             }`}
           >
-            <p className="text-xs text-gray-400 text-center px-4">
+            <p className="text-xs text-muted-foreground text-center px-4">
               {emptyMessages[status]}
             </p>
           </div>

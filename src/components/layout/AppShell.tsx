@@ -18,7 +18,7 @@ export function AppShell({ sidebar, children }: AppShellProps) {
       }`}
     >
       <aside
-        className={`border-r border-gray-200 bg-gray-50 overflow-y-auto overflow-x-hidden transition-opacity duration-200 ${
+        className={`border-r border-border bg-muted/50 overflow-y-auto overflow-x-hidden transition-opacity duration-200 ${
           sidebarOpen ? "opacity-100" : "opacity-0 pointer-events-none"
         }`}
       >

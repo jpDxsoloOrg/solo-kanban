@@ -8,6 +8,8 @@ import type { IssueWithRelations } from "@/types";
 import { moveIssue } from "@/actions/move-issue";
 import { IssueDetailModal } from "./IssueDetailModal";
 import { getIssue } from "@/actions/get-issue";
+import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
+import { ShortcutsDialog } from "./ShortcutsDialog";
 
 const COLUMNS: { status: IssueStatus; label: string }[] = [
   { status: "OPEN", label: "Open" },
@@ -26,7 +28,28 @@ export function Board({ issues: initialIssues, projectId, epics }: BoardProps) {
   const [issues, setIssues] = useState(initialIssues);
   const [isMoving, setIsMoving] = useState(false);
   const [selectedIssue, setSelectedIssue] = useState<IssueWithRelations | null>(null);
+  const [showShortcuts, setShowShortcuts] = useState(false);
+  const [showCreateInOpen, setShowCreateInOpen] = useState(false);
 
+  useKeyboardShortcuts([
+    {
+      key: "?",
+      shift: true,
+      handler: () => setShowShortcuts(true),
+    },
+    {
+      key: "Escape",
+      handler: () => {
+        if (showShortcuts) setShowShortcuts(false);
+        else if (selectedIssue) setSelectedIssue(null);
+      },
+      ignoreInputs: false,
+    },
+    {
+      key: "n",
+      handler: () => setShowCreateInOpen(true),
+    },
+  ]);
   const handleMoveIssue = useCallback(
     async (issueId: string, newStatus: IssueStatus, newOrder: number) => {
       if (isMoving) return;
@@ -112,6 +135,10 @@ export function Board({ issues: initialIssues, projectId, epics }: BoardProps) {
             projectId={projectId}
             epics={epics}
             onIssueCreated={handleIssueCreated}
+            {...(col.status === "OPEN" && {
+              showCreateForm: showCreateInOpen,
+              onCreateFormChange: setShowCreateInOpen,
+            })}
           />
         ))}
       </div>
@@ -125,6 +152,7 @@ export function Board({ issues: initialIssues, projectId, epics }: BoardProps) {
           }}
         />
       )}
+      <ShortcutsDialog open={showShortcuts} onClose={() => setShowShortcuts(false)} />
     </div>
   );
 }

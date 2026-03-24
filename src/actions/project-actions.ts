@@ -33,3 +33,14 @@ export async function deleteProject(projectId: string) {
 
   redirect(next ? `/projects/${next.id}/board` : "/");
 }
+
+ export async function updateProject(
+     projectId: string,
+     data: { name?: string; description?: string | null }) {
+      const project = await prisma.project.update({
+        where: { id: projectId },
+        data,
+      });
+    
+      return project;
+   }
