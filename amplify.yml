@@ -9,6 +9,7 @@ frontend:
     build:
       commands:
         - env | grep -E '^(DATABASE_URL|DIRECT_DATABASE_URL)' | sed 's/=.*/=****/' || true
+        - echo "DATABASE_URL=$DATABASE_URL" > .env.production
         - npm run build
   artifacts:
     baseDirectory: .next
