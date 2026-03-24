@@ -1,5 +1,6 @@
 "use client";
-
+import { Toggle, Kbd } from "@dxsolo/ui";
+import { useTheme } from "@/components/theme/ThemeProvider";
 import { useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import type { Epic } from "@prisma/client";
@@ -17,7 +18,7 @@ interface SidebarProps {
 export function Sidebar({ projectId, projects, epics, epicFilter }: SidebarProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
-
+  const { theme, toggleTheme } = useTheme();
   // Project creation state
   const [showCreateProject, setShowCreateProject] = useState(false);
   const [newProjectName, setNewProjectName] = useState("");
@@ -136,6 +137,7 @@ export function Sidebar({ projectId, projects, epics, epicFilter }: SidebarProps
     }
   };
 
+
   return (
     <div className="p-4 flex flex-col gap-4 h-full">
       {/* Project switcher */}
@@ -163,8 +165,11 @@ export function Sidebar({ projectId, projects, epics, epicFilter }: SidebarProps
 
       {/* Navigation */}
       <nav className="flex flex-col gap-1">
-        <Button intent="ghost" className="justify-start w-full font-medium">
+        <Button intent="ghost" className="justify-start w-full font-medium" onClick={() => router.push(`/projects/${projectId}/board`)}>
           Board
+        </Button>
+        <Button intent="ghost" className="justify-start w-full font-medium" onClick={() => router.push(`/projects/${projectId}/settings`)}>
+          Settings
         </Button>
       </nav>
 
@@ -240,6 +245,20 @@ export function Sidebar({ projectId, projects, epics, epicFilter }: SidebarProps
         </div>
       </div>
 
+      {/* Shortcuts hint & theme toggle */}
+      <div className="border-t border-border pt-4 flex flex-col gap-3">
+        <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+          <span>Press</span>
+          <Kbd>?</Kbd>
+          <span>for keyboard shortcuts</span>
+        </div>
+        <Toggle
+          checked={theme === "dark"}
+          onCheckedChange={toggleTheme}
+          label="Dark Mode"
+          size="sm"
+        />
+      </div>
       {/* Create Project modal */}
       <Modal
         open={showCreateProject}

@@ -148,7 +148,7 @@ export function IssueCard({ issue, onMoveIssue, onSelect }: IssueCardProps) {
           {/* Subtask progress */}
           {totalSubtasks > 0 && (
             <div className="mt-2 flex items-center gap-2">
-              <div className="flex-1 h-1 bg-gray-200 rounded-full overflow-hidden">
+              <div className="flex-1 h-1 bg-muted rounded-full overflow-hidden">
                 <div
                   className="h-full bg-green-500 rounded-full transition-all"
                   style={{
@@ -156,7 +156,7 @@ export function IssueCard({ issue, onMoveIssue, onSelect }: IssueCardProps) {
                   }}
                 />
               </div>
-              <span className="text-xs text-gray-400">
+              <span className="text-xs text-muted-foreground">
                 {completedSubtasks}/{totalSubtasks}
               </span>
             </div>
