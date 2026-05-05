@@ -51,7 +51,8 @@ export function IssueView({ issue: initial, projectId }: IssueViewProps) {
   };
 
   return (
-    <div className="max-w-3xl mx-auto p-6">
+    <div className="h-full overflow-y-auto">
+      <div className="max-w-3xl mx-auto p-6">
       <div className="mb-4">
         <Link
           href={`/projects/${projectId}/board`}
@@ -113,6 +114,7 @@ export function IssueView({ issue: initial, projectId }: IssueViewProps) {
           onUpdate={(updated) => setIssue(updated)}
         />
       )}
+      </div>
     </div>
   );
 }
