@@ -2,6 +2,8 @@
 @import "@dxsolo/ui/theme.css";
 @plugin "@tailwindcss/typography";
 
+@custom-variant dark (&:where(.dark, .dark *));
+
 @source "../../node_modules/@dxsolo/ui";
 
 body {
