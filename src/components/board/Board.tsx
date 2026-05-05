@@ -1,13 +1,12 @@
 "use client";
 
 import { useState, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import { IssueStatus } from "@prisma/client";
 import type { Epic } from "@prisma/client";
 import { Column } from "./Column";
 import type { IssueWithRelations } from "@/types";
 import { moveIssue } from "@/actions/move-issue";
-import { IssueDetailModal } from "./IssueDetailModal";
-import { getIssue } from "@/actions/get-issue";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { ShortcutsDialog } from "./ShortcutsDialog";
 
@@ -25,9 +24,9 @@ interface BoardProps {
 }
 
 export function Board({ issues: initialIssues, projectId, epics }: BoardProps) {
+  const router = useRouter();
   const [issues, setIssues] = useState(initialIssues);
   const [isMoving, setIsMoving] = useState(false);
-  const [selectedIssue, setSelectedIssue] = useState<IssueWithRelations | null>(null);
   const [showShortcuts, setShowShortcuts] = useState(false);
   const [showCreateInOpen, setShowCreateInOpen] = useState(false);
 
@@ -41,7 +40,6 @@ export function Board({ issues: initialIssues, projectId, epics }: BoardProps) {
       key: "Escape",
       handler: () => {
         if (showShortcuts) setShowShortcuts(false);
-        else if (selectedIssue) setSelectedIssue(null);
       },
       ignoreInputs: false,
     },
@@ -50,6 +48,13 @@ export function Board({ issues: initialIssues, projectId, epics }: BoardProps) {
       handler: () => setShowCreateInOpen(true),
     },
   ]);
+
+  const handleSelectIssue = useCallback(
+    (issue: IssueWithRelations) => {
+      router.push(`/projects/${projectId}/issues/${issue.number}`);
+    },
+    [router, projectId]
+  );
   const handleMoveIssue = useCallback(
     async (issueId: string, newStatus: IssueStatus, newOrder: number) => {
       if (isMoving) return;
@@ -99,21 +104,6 @@ export function Board({ issues: initialIssues, projectId, epics }: BoardProps) {
     setIssues((prev) => [...prev, issue]);
   }, []);
 
-  const handleCloseDetail = useCallback(async () => {
-    if (!selectedIssue) return;
-
-    try {
-      const fresh = await getIssue(selectedIssue.id);
-      if (fresh) {
-        setIssues((prev) => prev.map((i) => (i.id === fresh.id ? fresh : i)));
-      }
-    } catch (error) {
-      console.error("Failed to refresh issue:", error);
-    }
-
-    setSelectedIssue(null);
-  }, [selectedIssue]);
-
   const issuesByStatus = COLUMNS.map((col) => ({
     ...col,
     issues: issues
@@ -131,7 +121,7 @@ export function Board({ issues: initialIssues, projectId, epics }: BoardProps) {
             label={col.label}
             issues={col.issues}
             onMoveIssue={handleMoveIssue}
-            onSelectIssue={setSelectedIssue}
+            onSelectIssue={handleSelectIssue}
             projectId={projectId}
             epics={epics}
             onIssueCreated={handleIssueCreated}
@@ -142,16 +132,6 @@ export function Board({ issues: initialIssues, projectId, epics }: BoardProps) {
           />
         ))}
       </div>
-      {selectedIssue && (
-        <IssueDetailModal
-          issue={issues.find((i) => i.id === selectedIssue.id) ?? selectedIssue}
-          onClose={handleCloseDetail}
-          onUpdate={(updated) => {
-            setIssues((prev) => prev.map((i) => (i.id === updated.id ? updated : i)));
-            setSelectedIssue(updated);
-          }}
-        />
-      )}
       <ShortcutsDialog open={showShortcuts} onClose={() => setShowShortcuts(false)} />
     </div>
   );
