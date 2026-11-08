@@ -2,6 +2,7 @@
 
 import { prisma } from "@/lib/prisma";
 import { IssueStatus } from "@prisma/client";
+import { lockIssue, normalizeColumn, ORDER_TRANSACTION_OPTIONS } from "@/lib/issue-order";
 
 /**
  * Drag-and-drop move on the board. Orders are scoped to the issue's own
@@ -12,32 +13,41 @@ export async function moveIssue(
   newStatus: IssueStatus,
   newOrder: number
 ) {
-  // Get the issue to find its project
-  const issue = await prisma.issue.findUnique({
-    where: { id: issueId },
-    select: { projectId: true, sprintId: true, status: true, order: true },
-  });
-
-  if (!issue) {
-    throw new Error("Issue not found");
-  }
-
-  const oldStatus = issue.status;
-  const oldOrder = issue.order;
-
-  // If nothing changed, skip
-  if (oldStatus === newStatus && oldOrder === newOrder) {
-    return;
-  }
-
   // Use a transaction to keep order values consistent
   await prisma.$transaction(async (tx) => {
+    const issue = await lockIssue(tx, issueId);
+    if (!issue) {
+      throw new Error("Issue not found");
+    }
+
+    // The board only shows the active sprint, so this is a stale board after
+    // the sprint was completed elsewhere. Its issues are archived history;
+    // the board rolls the card back and asks the user to try again.
+    if (issue.sprintStatus === "COMPLETED") {
+      throw new Error("This issue's sprint has been completed. Reload the board.");
+    }
+
+    const oldStatus = issue.status;
+    const oldOrder = issue.order;
+    const column = { projectId: issue.projectId, sprintId: issue.sprintId };
+
+    // newOrder is an index among the target column's other issues, computed
+    // from the client's (possibly stale) copy: keep it inside the column.
+    const otherIssues = await tx.issue.count({
+      where: { ...column, status: newStatus, id: { not: issueId } },
+    });
+    newOrder = Math.max(0, Math.min(Math.trunc(newOrder) || 0, otherIssues));
+
+    // If nothing changed, skip
+    if (oldStatus === newStatus && oldOrder === newOrder) {
+      return;
+    }
+
     // If moving to a different column, close the gap in the old column
     if (oldStatus !== newStatus) {
       await tx.issue.updateMany({
         where: {
-          projectId: issue.projectId,
-          sprintId: issue.sprintId,
+          ...column,
           status: oldStatus,
           order: { gt: oldOrder },
         },
@@ -52,8 +62,7 @@ export async function moveIssue(
       // Moving to a different column: shift everything at or after newOrder down
       await tx.issue.updateMany({
         where: {
-          projectId: issue.projectId,
-          sprintId: issue.sprintId,
+          ...column,
           status: newStatus,
           order: { gte: newOrder },
         },
@@ -67,8 +76,7 @@ export async function moveIssue(
         // Moving down: shift items between old and new position up
         await tx.issue.updateMany({
           where: {
-            projectId: issue.projectId,
-          sprintId: issue.sprintId,
+            ...column,
             status: newStatus,
             order: { gt: oldOrder, lte: newOrder },
             id: { not: issueId },
@@ -81,8 +89,7 @@ export async function moveIssue(
         // Moving up: shift items between new and old position down
         await tx.issue.updateMany({
           where: {
-            projectId: issue.projectId,
-          sprintId: issue.sprintId,
+            ...column,
             status: newStatus,
             order: { gte: newOrder, lt: oldOrder },
             id: { not: issueId },
@@ -102,5 +109,12 @@ export async function moveIssue(
         order: newOrder,
       },
     });
-  });
+
+    // Keep both columns 0..n-1 even if they already had gaps or duplicates
+    // (e.g. two devices moving cards at the same moment).
+    await normalizeColumn(tx, { ...column, status: newStatus });
+    if (oldStatus !== newStatus) {
+      await normalizeColumn(tx, { ...column, status: oldStatus });
+    }
+  }, ORDER_TRANSACTION_OPTIONS);
 }

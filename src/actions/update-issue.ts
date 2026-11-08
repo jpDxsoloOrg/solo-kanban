@@ -2,7 +2,12 @@
 
 import { prisma } from "@/lib/prisma";
 import { IssueStatus, IssuePriority } from "@prisma/client";
-import { nextOrderInColumn, normalizeColumn } from "@/lib/issue-order";
+import {
+  lockIssue,
+  nextOrderInColumn,
+  normalizeColumn,
+  ORDER_TRANSACTION_OPTIONS,
+} from "@/lib/issue-order";
 
 interface UpdateIssueInput {
   title?: string;
@@ -13,15 +18,9 @@ interface UpdateIssueInput {
 
 export async function updateIssue(issueId: string, data: UpdateIssueInput) {
   return prisma.$transaction(async (tx) => {
-    const current = await tx.issue.findUnique({
-      where: { id: issueId },
-      select: {
-        projectId: true,
-        sprintId: true,
-        status: true,
-        sprint: { select: { status: true } },
-      },
-    });
+    // Locks the issue and, first, its sprint, so a status change can't
+    // interleave with completing that sprint.
+    const current = await lockIssue(tx, issueId);
     if (!current) throw new Error("Issue not found");
 
     const patch: UpdateIssueInput & { order?: number; sprintId?: string | null } = { ...data };
@@ -32,7 +31,7 @@ export async function updateIssue(issueId: string, data: UpdateIssueInput) {
       // leave it invisible (completed sprints aren't on the board), so send
       // it back to the backlog instead.
       const reopenedFromHistory =
-        current.sprint?.status === "COMPLETED" && data.status !== "DONE";
+        current.sprintStatus === "COMPLETED" && data.status !== "DONE";
       const targetSprintId = reopenedFromHistory ? null : current.sprintId;
 
       patch.sprintId = targetSprintId;
@@ -65,5 +64,5 @@ export async function updateIssue(issueId: string, data: UpdateIssueInput) {
     }
 
     return updated;
-  });
+  }, ORDER_TRANSACTION_OPTIONS);
 }

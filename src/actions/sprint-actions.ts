@@ -2,11 +2,12 @@
 
 import { prisma } from "@/lib/prisma";
 import { revalidatePath } from "next/cache";
-import type { Sprint } from "@prisma/client";
+import type { Prisma, Sprint } from "@prisma/client";
 import type { ActionResult, SprintWithCounts } from "@/types";
-import { moveIssuesToSprint } from "@/lib/issue-order";
+import { lockIssue, moveIssuesToSprint, ORDER_TRANSACTION_OPTIONS } from "@/lib/issue-order";
 import {
   addDays,
+  daysBetween,
   DEFAULT_SPRINT_LENGTH_DAYS,
   fromDateInputValue,
   utcToday,
@@ -103,6 +104,15 @@ function checkDateOrder(startDate: Date | null | undefined, endDate: Date | null
     return "The end date can't be before the start date.";
   }
   return null;
+}
+
+/**
+ * Lock a sprint row before reading or moving its issues. FOR UPDATE waits for
+ * issue changes that hold the sprint (`lockIssue` takes FOR KEY SHARE) and
+ * makes later ones wait until this transaction ends.
+ */
+async function lockSprintForUpdate(tx: Prisma.TransactionClient, sprintId: string) {
+  await tx.$queryRaw`SELECT 1 FROM "Sprint" WHERE "id" = ${sprintId} FOR UPDATE`;
 }
 
 async function nextSprintNumber(projectId: string, tx: Pick<typeof prisma, "sprint"> = prisma) {
@@ -262,6 +272,9 @@ export async function completeSprint(
 ): Promise<ActionResult<CompleteSprintSummary>> {
   try {
     const result = await prisma.$transaction(async (tx) => {
+      // Lock first, so no issue can change status in this sprint between
+      // reading its unfinished issues and archiving it.
+      await lockSprintForUpdate(tx, sprintId);
       const sprint = await tx.sprint.findUnique({ where: { id: sprintId } });
       if (!sprint) throw new Error("Sprint not found.");
       if (sprint.status !== "ACTIVE") throw new Error("Only the active sprint can be completed.");
@@ -310,9 +323,18 @@ export async function completeSprint(
 
       let nextSprintStarted = false;
       if (nextSprint && options.startNext) {
-        const startDate =
-          nextSprint.startDate ?? fromDateInputValue(options.today) ?? utcToday();
-        const endDate = nextSprint.endDate ?? addDays(startDate, DEFAULT_SPRINT_LENGTH_DAYS);
+        const today = fromDateInputValue(options.today) ?? utcToday();
+        let startDate = nextSprint.startDate ?? today;
+        let endDate = nextSprint.endDate ?? addDays(startDate, DEFAULT_SPRINT_LENGTH_DAYS);
+        if (startDate < today) {
+          // Planned to start in the past (the previous sprint ran late):
+          // start it today with its planned length, so it isn't overdue the
+          // moment it starts.
+          const plannedLength =
+            endDate >= startDate ? daysBetween(startDate, endDate) : DEFAULT_SPRINT_LENGTH_DAYS;
+          startDate = today;
+          endDate = addDays(today, plannedLength);
+        }
         await tx.sprint.update({
           where: { id: nextSprint.id },
           data: {
@@ -333,7 +355,7 @@ export async function completeSprint(
           nextSprintStarted,
         },
       };
-    });
+    }, ORDER_TRANSACTION_OPTIONS);
 
     revalidateProject(result.projectId);
     return { ok: true, data: result.summary };
@@ -347,6 +369,7 @@ export async function completeSprint(
 export async function deleteSprint(sprintId: string): Promise<ActionResult<{ movedIssues: number }>> {
   try {
     const result = await prisma.$transaction(async (tx) => {
+      await lockSprintForUpdate(tx, sprintId);
       const sprint = await tx.sprint.findUnique({
         where: { id: sprintId },
         include: { issues: { select: { id: true } } },
@@ -364,7 +387,7 @@ export async function deleteSprint(sprintId: string): Promise<ActionResult<{ mov
       );
       await tx.sprint.delete({ where: { id: sprintId } });
       return { projectId: sprint.projectId, movedIssues };
-    });
+    }, ORDER_TRANSACTION_OPTIONS);
 
     revalidateProject(result.projectId);
     return { ok: true, data: { movedIssues: result.movedIssues } };
@@ -389,17 +412,18 @@ export async function moveIssueToSprint(
 ): Promise<ActionResult<{ sprintId: string | null }>> {
   try {
     const projectId = await prisma.$transaction(async (tx) => {
-      const issue = await tx.issue.findUnique({
-        where: { id: issueId },
-        select: { projectId: true },
-      });
+      const issue = await lockIssue(tx, issueId);
       if (!issue) throw new Error("Issue not found.");
+      // Finished work stays with the sprint it was completed in.
+      if (issue.sprintStatus === "COMPLETED" && issue.status === "DONE") {
+        throw new Error("Issues archived with a completed sprint can't be moved.");
+      }
 
       if (sprintId) {
-        const sprint = await tx.sprint.findUnique({
-          where: { id: sprintId },
-          select: { projectId: true, status: true },
-        });
+        // KEY SHARE, as in lockIssue: completing the target sprint waits for
+        // this move, or this move sees the target already completed.
+        const [sprint] = await tx.$queryRaw<Pick<Sprint, "projectId" | "status">[]>`
+          SELECT "projectId", "status" FROM "Sprint" WHERE "id" = ${sprintId} FOR KEY SHARE`;
         if (!sprint || sprint.projectId !== issue.projectId) {
           throw new Error("That sprint doesn't exist in this project.");
         }
@@ -410,7 +434,7 @@ export async function moveIssueToSprint(
 
       await moveIssuesToSprint(tx, issue.projectId, [issueId], sprintId);
       return issue.projectId;
-    });
+    }, ORDER_TRANSACTION_OPTIONS);
 
     revalidateProject(projectId);
     return { ok: true, data: { sprintId } };

@@ -51,6 +51,11 @@ export function addDays(date: Date, days: number): Date {
   return new Date(date.getTime() + days * DAY_MS);
 }
 
+/** Whole days from one stored sprint date to another (negative if `to` is earlier). */
+export function daysBetween(from: Date, to: Date): number {
+  return Math.round((to.getTime() - from.getTime()) / DAY_MS);
+}
+
 /** Human-readable sprint date, e.g. "Nov 20" or "Nov 20, 2027". */
 export function formatSprintDate(
   date: Date | string | null | undefined,

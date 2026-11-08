@@ -8,6 +8,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import type { Epic } from "@prisma/client";
 import { Button, Select, Modal, Input, ColorPicker, AlertDialog } from "@dxsolo/ui";
 import { createProject } from "@/actions/project-actions";
+import { todayInputValue } from "@/lib/sprint-dates";
 import { createEpic, updateEpic, deleteEpic } from "@/actions/epic-actions";
 import { InstallAppButton } from "@/components/pwa/InstallAppButton";
 import { isNavigationError } from "./navigation-error";
@@ -128,7 +129,7 @@ export function Sidebar({ projectId, projects, epics, epicFilter }: SidebarProps
     setIsCreatingProject(true);
     setProjectError(null);
     try {
-      await createProject(trimmed, newProjectDescription.trim() || undefined);
+      await createProject(trimmed, newProjectDescription.trim() || undefined, todayInputValue());
       // createProject redirects, so this state cleanup is for safety
       setShowCreateProject(false);
       setNewProjectName("");
