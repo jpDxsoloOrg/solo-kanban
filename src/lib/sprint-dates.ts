@@ -95,3 +95,22 @@ export function daysRemaining(
   if (!end || !now) return null;
   return Math.round((end.getTime() - now.getTime()) / DAY_MS);
 }
+
+/** Shift an `<input type="date">` value by whole days ("" if it isn't a valid date). */
+export function addDaysToInputValue(value: string, days: number): string {
+  const date = fromDateInputValue(value);
+  return date ? toDateInputValue(addDays(date, days)) : "";
+}
+
+/** "Nov 8, 2026 – Nov 22, 2026" style range with years, for reports. */
+export function formatSprintRangeWithYear(
+  start: Date | string | null | undefined,
+  end: Date | string | null | undefined,
+): string {
+  const s = formatSprintDate(start, { withYear: true });
+  const e = formatSprintDate(end, { withYear: true });
+  if (s && e) return `${s} – ${e}`;
+  if (s) return `Started ${s}`;
+  if (e) return `Ends ${e}`;
+  return "";
+}
