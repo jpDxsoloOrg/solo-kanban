@@ -123,6 +123,14 @@ export async function getSprints(projectId: string): Promise<SprintWithCounts[]>
   });
 }
 
+/**
+ * The number the next sprint created in this project will get, so the UI can
+ * label the roll-over choice "New sprint (Sprint N)".
+ */
+export async function getNextSprintNumber(projectId: string): Promise<number> {
+  return nextSprintNumber(projectId);
+}
+
 // ---------------------------------------------------------------------------
 // Lifecycle
 // ---------------------------------------------------------------------------
