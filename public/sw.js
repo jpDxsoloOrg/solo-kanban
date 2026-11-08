@@ -3,9 +3,12 @@
  *
  * - Precaches the /offline page (plus the CSS/JS/fonts it needs) and the icons.
  * - Cache-first for hashed build assets (/_next/static/*) and /icons/*;
- *   fonts (/_next/static/media/*) only while offline.
+ *   fonts (/_next/static/media/*) and stylesheets (/_next/static/css/*)
+ *   only while offline.
  * - Network-first for page navigations, falling back to the last cached copy
- *   of that page, then to /offline.
+ *   of that page (marked as a saved copy, see SAVED_COPY_META), then to
+ *   /offline. The start URL "/" is never cached: it only redirects to a
+ *   board, so offline it redirects to the page cached last instead.
  * - Never touches anything else: API routes (/api/*, e.g. the live-update
  *   revision poll, which must always reach the server), server actions
  *   (POST / "Next-Action"), RSC/flight requests ("RSC" header or ?_rsc=),
@@ -14,7 +17,7 @@
  * Bump VERSION whenever this file's logic, the precache list or the icons
  * change; old caches are deleted when the new worker activates.
  */
-const VERSION = "v2";
+const VERSION = "v3";
 const PREFIX = "solo-kanban-";
 const PRECACHE = `${PREFIX}precache-${VERSION}`;
 const STATIC_CACHE = `${PREFIX}static-${VERSION}`;
@@ -22,6 +25,14 @@ const PAGES_CACHE = `${PREFIX}pages-${VERSION}`;
 const CURRENT_CACHES = [PRECACHE, STATIC_CACHE, PAGES_CACHE];
 
 const OFFLINE_URL = "/offline";
+// The manifest's start_url.
+const START_URL = "/";
+/**
+ * Added to the <head> of a page served from PAGES_CACHE, with the time the
+ * copy was saved: src/components/pwa/OfflineBanner.tsx then says it's a
+ * saved copy and reloads it once the server can be reached again.
+ */
+const SAVED_COPY_META = "sk-saved-copy";
 const PRECACHE_URLS = [
   OFFLINE_URL,
   "/manifest.webmanifest",
@@ -94,12 +105,20 @@ self.addEventListener("fetch", (event) => {
   }
   if (url.pathname === "/sw.js") return;
 
-  // Fonts: while online, leave them to the browser (they're immutable and
-  // stay in its HTTP cache). When this worker serves a preloaded font,
-  // Chrome repeats its "preloaded but not used" console warning after every
-  // later request on the page, i.e. every live-update poll. Offline, use
-  // our copy.
-  if (url.pathname.startsWith("/_next/static/media/") && self.navigator.onLine) return;
+  // Fonts and stylesheets: while online, leave them to the browser (they're
+  // immutable and stay in its HTTP cache). Responses preload them in a Link
+  // header, and Chrome doesn't always match a preload to a copy this worker
+  // serves: for fonts it repeats a "preloaded but not used" warning after
+  // every later request on the page (i.e. every live-update poll); on error
+  // pages (e.g. a 404), which only add the stylesheet once loaded, it warns
+  // of a "cross-world service worker resource mismatch". Offline, serve our
+  // copies (cached with /offline and with every cached page).
+  if (
+    self.navigator.onLine &&
+    (url.pathname.startsWith("/_next/static/media/") || url.pathname.startsWith("/_next/static/css/"))
+  ) {
+    return;
+  }
 
   if (url.pathname.startsWith("/_next/static/") || url.pathname.startsWith("/icons/")) {
     event.respondWith(cacheFirst(event));
@@ -134,21 +153,57 @@ async function cacheFirst(event) {
 /** Pages: always try the network; offline, use the last copy or /offline. */
 async function networkFirstPage(event) {
   const { request } = event;
+  const isStartUrl = new URL(request.url).pathname === START_URL;
   try {
     const response = await fetch(request);
-    // Redirects arrive as opaque responses here; only cache real pages.
-    if (response.ok && response.type === "basic") {
+    // Redirects arrive as opaque responses here; only cache real pages. "/"
+    // redirects to a board, or welcomes a first-time user: not worth keeping.
+    if (response.ok && response.type === "basic" && !isStartUrl) {
       const copy = response.clone();
       event.waitUntil(cachePage(request, copy).catch(() => undefined));
     }
     return response;
   } catch (error) {
-    const cached =
-      (await caches.match(request, { cacheName: PAGES_CACHE, ignoreVary: true })) ||
-      (await caches.match(OFFLINE_URL, { ignoreVary: true }));
-    if (cached) return cached;
+    const cached = await caches.match(request, { cacheName: PAGES_CACHE, ignoreVary: true });
+    if (cached) return markAsSavedCopy(cached);
+
+    // An offline launch from the home screen: open the page used last.
+    if (isStartUrl) {
+      const lastPage = await lastCachedPageUrl();
+      if (lastPage) return Response.redirect(lastPage, 302);
+    }
+
+    const offline = await caches.match(OFFLINE_URL, { ignoreVary: true });
+    if (offline) return offline;
     throw error;
   }
+}
+
+/** The page cached most recently (cachePage() re-adds a page on every load). */
+async function lastCachedPageUrl() {
+  const keys = await (await caches.open(PAGES_CACHE)).keys();
+  for (let i = keys.length - 1; i >= 0; i--) {
+    const { pathname } = new URL(keys[i].url);
+    if (pathname !== START_URL && pathname !== OFFLINE_URL) return keys[i].url;
+  }
+  return null;
+}
+
+/** Adds the SAVED_COPY_META marker (with the time the copy was saved). */
+async function markAsSavedCopy(response) {
+  const html = await response.text();
+  const savedAt = new Date(response.headers.get("date") ?? "");
+  const marker = `<meta name="${SAVED_COPY_META}" content="${
+    Number.isNaN(savedAt.getTime()) ? "" : savedAt.toISOString()
+  }">`;
+  const headers = new Headers(response.headers);
+  // The body is decoded, and its length changes.
+  headers.delete("content-encoding");
+  headers.delete("content-length");
+  return new Response(
+    html.replace(/<head(\s[^>]*)?>/i, (head) => head + marker),
+    { status: response.status, statusText: response.statusText, headers }
+  );
 }
 
 /** Store a page and make sure the build assets it references are cached. */

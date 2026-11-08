@@ -1,0 +1,169 @@
+"use client";
+
+import { useEffect, useSyncExternalStore } from "react";
+import { useRouter } from "next/navigation";
+
+/**
+ * public/sw.js adds this to pages it serves from its cache because the
+ * network failed; its content is when the copy was saved ("" if unknown).
+ */
+const SAVED_COPY_SELECTOR = 'meta[name="sk-saved-copy"]';
+/** Succeeds only when the server and its database can be reached. */
+const PROBE_URL = "/api/revision";
+const RETRY_MIN_MS = 2_000;
+const RETRY_MAX_MS = 60_000;
+
+/**
+ * When this document is a saved copy: its save time, else null. Read before
+ * hydration, and fixed for the life of the document (client-side
+ * navigations keep it).
+ */
+const savedAt: string | null =
+  typeof document === "undefined"
+    ? null
+    : (document.querySelector<HTMLMetaElement>(SAVED_COPY_SELECTOR)?.content ?? null);
+
+/**
+ * The page went offline and hasn't been refreshed since: it may be out of
+ * date. Module scope: AppShell remounts on every client-side navigation.
+ */
+let wentOffline = false;
+
+function subscribeOnline(listener: () => void) {
+  window.addEventListener("online", listener);
+  window.addEventListener("offline", listener);
+  return () => {
+    window.removeEventListener("online", listener);
+    window.removeEventListener("offline", listener);
+  };
+}
+const getOnline = () => navigator.onLine;
+const getServerOnline = () => true;
+
+const subscribeNever = () => () => {};
+const getSavedAt = () => savedAt;
+const getServerSavedAt = () => null;
+
+function formatSavedAt(value: string): string | null {
+  const date = new Date(value);
+  if (!value || Number.isNaN(date.getTime())) return null;
+  return date.toLocaleString(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+/**
+ * Says when the page is offline or is a saved copy, and brings it up to date
+ * once the server can be reached again, whether or not live updates are on:
+ * a saved copy is reloaded (its HTML, open forms and live-update baseline
+ * all date from when it was saved), a page that was loaded online gets a
+ * router.refresh(). Nothing is fetched while the page is online and current.
+ */
+export function OfflineBanner() {
+  const router = useRouter();
+  const online = useSyncExternalStore(subscribeOnline, getOnline, getServerOnline);
+  const savedCopyAt = useSyncExternalStore(subscribeNever, getSavedAt, getServerSavedAt);
+
+  useEffect(() => {
+    let disposed = false;
+    let checking = false;
+    let failures = 0;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+
+    // `online` only means a network is up: wait until the server answers,
+    // or a reload would just get the saved copy again.
+    async function check() {
+      clearTimeout(timer);
+      timer = undefined;
+      if (disposed || checking || (savedAt === null && !wentOffline)) return;
+      if (!navigator.onLine || document.visibilityState !== "visible") return;
+
+      checking = true;
+      let reachable = false;
+      try {
+        reachable = (await fetch(PROBE_URL, { cache: "no-store" })).ok;
+      } catch {
+        // Still offline.
+      }
+      checking = false;
+      if (disposed) return;
+
+      if (reachable) {
+        if (savedAt !== null) {
+          window.location.reload();
+        } else {
+          wentOffline = false;
+          router.refresh();
+        }
+        return;
+      }
+      failures += 1;
+      timer = setTimeout(check, Math.min(RETRY_MIN_MS * 2 ** (failures - 1), RETRY_MAX_MS));
+    }
+
+    const handleOnline = () => {
+      failures = 0;
+      void check();
+    };
+    const handleOffline = () => {
+      wentOffline = true;
+      clearTimeout(timer);
+      timer = undefined;
+    };
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") void check();
+    };
+
+    if (!navigator.onLine) wentOffline = true;
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("offline", handleOffline);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    // A saved copy may already be back online (or the server was only
+    // briefly unreachable): check at once.
+    void check();
+
+    return () => {
+      disposed = true;
+      clearTimeout(timer);
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("offline", handleOffline);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [router]);
+
+  const savedCopy = savedCopyAt !== null;
+  const savedTime = savedCopy ? formatSavedAt(savedCopyAt) : null;
+
+  return (
+    <div role="status" className="shrink-0">
+      {(savedCopy || !online) && (
+        <div className="flex items-start gap-2 border-b border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
+          <svg
+            aria-hidden="true"
+            viewBox="0 0 24 24"
+            className="mt-0.5 h-4 w-4 shrink-0"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <path d="M12 20h.01M8.5 16.43a5 5 0 0 1 7 0M5 12.86a10 10 0 0 1 5.17-2.69M19 12.86a10 10 0 0 0-2-1.52M2 8.82a15 15 0 0 1 4.18-2.64M22 8.82a15 15 0 0 0-11.29-3.76M2 2l20 20" />
+          </svg>
+          <p className="min-w-0">
+            <span className="font-medium">
+              {savedCopy ? "Offline — showing a saved copy" : "You're offline"}
+            </span>{" "}
+            <span className="block text-xs text-amber-800 sm:inline sm:text-sm dark:text-amber-200/80">
+              {savedTime && `Saved ${savedTime}. `}
+              Changes can&apos;t be saved until you reconnect.
+            </span>
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
