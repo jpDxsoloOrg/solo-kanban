@@ -7,7 +7,6 @@ import type { ActionResult, SprintWithCounts } from "@/types";
 import { lockIssue, moveIssuesToSprint, ORDER_TRANSACTION_OPTIONS } from "@/lib/issue-order";
 import {
   addDays,
-  daysBetween,
   DEFAULT_SPRINT_LENGTH_DAYS,
   fromDateInputValue,
   utcToday,
@@ -323,24 +322,20 @@ export async function completeSprint(
 
       let nextSprintStarted = false;
       if (nextSprint && options.startNext) {
+        // Same defaults as StartSprintDialog: "start it now" means today, and
+        // the planned end date is kept while it's still ahead; otherwise the
+        // sprint runs the default length.
         const today = fromDateInputValue(options.today) ?? utcToday();
-        let startDate = nextSprint.startDate ?? today;
-        let endDate = nextSprint.endDate ?? addDays(startDate, DEFAULT_SPRINT_LENGTH_DAYS);
-        if (startDate < today) {
-          // Planned to start in the past (the previous sprint ran late):
-          // start it today with its planned length, so it isn't overdue the
-          // moment it starts.
-          const plannedLength =
-            endDate >= startDate ? daysBetween(startDate, endDate) : DEFAULT_SPRINT_LENGTH_DAYS;
-          startDate = today;
-          endDate = addDays(today, plannedLength);
-        }
+        const plannedEnd = nextSprint.endDate;
         await tx.sprint.update({
           where: { id: nextSprint.id },
           data: {
             status: "ACTIVE",
-            startDate,
-            endDate: endDate < startDate ? addDays(startDate, DEFAULT_SPRINT_LENGTH_DAYS) : endDate,
+            startDate: today,
+            endDate:
+              plannedEnd && plannedEnd >= today
+                ? plannedEnd
+                : addDays(today, DEFAULT_SPRINT_LENGTH_DAYS),
           },
         });
         nextSprintStarted = true;

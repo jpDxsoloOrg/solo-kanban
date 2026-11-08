@@ -178,7 +178,7 @@ export function Board({
         const issue = previousIssues.find((i) => i.id === issueId);
         showToast({
           tone: "error",
-          message: `Couldn't move ${issue ? `#${issue.number}` : "the issue"}. Please try again.`,
+          message: `Couldn't move ${issue ? `#${issue.number}` : "the issue"}. Reload the board and try again.`,
         });
         return false;
       } finally {

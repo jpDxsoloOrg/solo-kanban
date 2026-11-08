@@ -17,7 +17,7 @@
  * Bump VERSION whenever this file's logic, the precache list or the icons
  * change; old caches are deleted when the new worker activates.
  */
-const VERSION = "v3";
+const VERSION = "v4";
 const PREFIX = "solo-kanban-";
 const PRECACHE = `${PREFIX}precache-${VERSION}`;
 const STATIC_CACHE = `${PREFIX}static-${VERSION}`;
@@ -113,8 +113,11 @@ self.addEventListener("fetch", (event) => {
   // pages (e.g. a 404), which only add the stylesheet once loaded, it warns
   // of a "cross-world service worker resource mismatch". Offline, serve our
   // copies (cached with /offline and with every cached page).
+  // Pages this worker answered with a saved copy or /offline (the server was
+  // unreachable even though a network is up) always get our copies.
   if (
     self.navigator.onLine &&
+    !fallbackClients.has(event.clientId) &&
     (url.pathname.startsWith("/_next/static/media/") || url.pathname.startsWith("/_next/static/css/"))
   ) {
     return;
@@ -150,6 +153,29 @@ async function cacheFirst(event) {
   return response;
 }
 
+/**
+ * Clients (documents) this worker answered with a saved copy, a redirect to
+ * one, or /offline. Their stylesheets and fonts must come from our cache: the
+ * browser's own cache may have evicted them and the server can't be reached.
+ */
+const fallbackClients = new Set();
+
+function rememberFallbackClient(event) {
+  if (event.resultingClientId) fallbackClients.add(event.resultingClientId);
+  // Forget documents that have gone away.
+  event.waitUntil(
+    self.clients
+      .matchAll({ includeUncontrolled: true })
+      .then((clients) => {
+        const live = new Set(clients.map((client) => client.id));
+        for (const id of fallbackClients) {
+          if (!live.has(id) && id !== event.resultingClientId) fallbackClients.delete(id);
+        }
+      })
+      .catch(() => undefined)
+  );
+}
+
 /** Pages: always try the network; offline, use the last copy or /offline. */
 async function networkFirstPage(event) {
   const { request } = event;
@@ -164,6 +190,7 @@ async function networkFirstPage(event) {
     }
     return response;
   } catch (error) {
+    rememberFallbackClient(event);
     const cached = await caches.match(request, { cacheName: PAGES_CACHE, ignoreVary: true });
     if (cached) return markAsSavedCopy(cached);
 

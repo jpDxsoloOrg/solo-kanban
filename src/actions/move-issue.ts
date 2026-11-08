@@ -2,7 +2,12 @@
 
 import { prisma } from "@/lib/prisma";
 import { IssueStatus } from "@prisma/client";
-import { lockIssue, normalizeColumn, ORDER_TRANSACTION_OPTIONS } from "@/lib/issue-order";
+import {
+  lockIssue,
+  lockProjectOrdering,
+  normalizeColumn,
+  ORDER_TRANSACTION_OPTIONS,
+} from "@/lib/issue-order";
 
 /**
  * Drag-and-drop move on the board. Orders are scoped to the issue's own
@@ -15,6 +20,10 @@ export async function moveIssue(
 ) {
   // Use a transaction to keep order values consistent
   await prisma.$transaction(async (tx) => {
+    const owner = await tx.issue.findUnique({ where: { id: issueId }, select: { projectId: true } });
+    if (!owner) throw new Error("Issue not found");
+    await lockProjectOrdering(tx, owner.projectId);
+
     const issue = await lockIssue(tx, issueId);
     if (!issue) {
       throw new Error("Issue not found");

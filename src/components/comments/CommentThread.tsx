@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useId, useRef, useState } from "react";
+import { useCallback, useId, useRef, useState, useEffect } from "react";
 import type { Comment } from "@prisma/client";
 import { addComment } from "@/actions/comment-actions";
 import type { CommentWithReplies } from "@/types";
@@ -47,8 +47,22 @@ function CommentSection({ issueId, initialComments }: CommentThreadProps) {
   // delete confirmation says.
   const deletedHereRef = useRef(new Set<string>());
 
+  // Latest threads, so an unmounted editor can tell "deleted elsewhere" from
+  // "merely hidden" (e.g. its thread was collapsed).
+  const threadsRef = useRef(threads);
+  useEffect(() => {
+    threadsRef.current = threads;
+  }, [threads]);
+
   const handleDraftOrphaned = useCallback((draft: OrphanedDraft) => {
     if (draft.commentIds.some((id) => id !== null && deletedHereRef.current.has(id))) return;
+    if (draft.kind === "edit") {
+      const [commentId] = draft.commentIds;
+      const stillExists = threadsRef.current.some(
+        (thread) => thread.id === commentId || thread.replies.some((reply) => reply.id === commentId),
+      );
+      if (stillExists) return;
+    }
     nextOrphanId.current += 1;
     const id = nextOrphanId.current;
     setOrphans((prev) => [...prev, { id, kind: draft.kind, body: draft.body }]);

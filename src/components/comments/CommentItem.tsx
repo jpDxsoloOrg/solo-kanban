@@ -32,6 +32,8 @@ export interface CommentItemProps {
   onUpdated: (comment: Comment) => void;
   onDeleted: (commentId: string) => void;
   onDraftOrphaned: (draft: OrphanedDraft) => void;
+  /** Told when this comment's inline editor opens or closes. */
+  onEditingChange?: (commentId: string, editing: boolean) => void;
 }
 
 function pluralize(count: number, singular: string, plural: string) {
@@ -62,6 +64,7 @@ export function CommentItem({
   onUpdated,
   onDeleted,
   onDraftOrphaned,
+  onEditingChange,
 }: CommentItemProps) {
   const [editing, setEditing] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
@@ -89,6 +92,10 @@ export function CommentItem({
       }
     };
   }, [commentId, parentId]);
+
+  useEffect(() => {
+    onEditingChange?.(comment.id, editing);
+  }, [onEditingChange, comment.id, editing]);
 
   useEffect(() => {
     if (!editing && restoreEditFocus.current) {

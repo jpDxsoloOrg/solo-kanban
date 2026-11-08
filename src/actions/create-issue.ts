@@ -28,10 +28,11 @@ export async function createIssue({
 
   const issue = await prisma.$transaction(async (tx) => {
     if (sprintId) {
-      const sprint = await tx.sprint.findUnique({
-        where: { id: sprintId },
-        select: { projectId: true, status: true },
-      });
+      // KEY SHARE lock: waits for a completeSprint in progress (which holds
+      // the sprint FOR UPDATE), so a new card can't land in a sprint that is
+      // being completed.
+      const [sprint] = await tx.$queryRaw<{ projectId: string; status: string }[]>`
+        SELECT "projectId", "status" FROM "Sprint" WHERE "id" = ${sprintId} FOR KEY SHARE`;
       if (!sprint || sprint.projectId !== projectId) throw new Error("Sprint not found.");
       if (sprint.status === "COMPLETED") {
         throw new Error("Issues can't be added to a completed sprint.");

@@ -29,6 +29,16 @@ export interface ColumnScope {
  */
 export const ORDER_TRANSACTION_OPTIONS = { timeout: 15_000 } as const;
 
+/**
+ * Serialize column re-ordering within a project. Two moves in the same column
+ * from different devices otherwise lock overlapping rows in different orders
+ * and Postgres aborts one with a deadlock. Must be the first lock a
+ * transaction takes; it's released when the transaction ends.
+ */
+export async function lockProjectOrdering(tx: Tx, projectId: string): Promise<void> {
+  await tx.$executeRaw`SELECT 1 FROM pg_advisory_xact_lock(hashtext(${"issue-order:" + projectId}))`;
+}
+
 /** The order value that appends an issue at the end of a column. */
 export async function nextOrderInColumn(tx: Tx, scope: ColumnScope): Promise<number> {
   const agg = await tx.issue.aggregate({

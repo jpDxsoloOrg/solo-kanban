@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { IssueStatus, IssuePriority } from "@prisma/client";
 import {
   lockIssue,
+  lockProjectOrdering,
   nextOrderInColumn,
   normalizeColumn,
   ORDER_TRANSACTION_OPTIONS,
@@ -18,6 +19,13 @@ interface UpdateIssueInput {
 
 export async function updateIssue(issueId: string, data: UpdateIssueInput) {
   return prisma.$transaction(async (tx) => {
+    // A status change re-orders columns: serialize it with board moves.
+    if (data.status !== undefined) {
+      const owner = await tx.issue.findUnique({ where: { id: issueId }, select: { projectId: true } });
+      if (!owner) throw new Error("Issue not found");
+      await lockProjectOrdering(tx, owner.projectId);
+    }
+
     // Locks the issue and, first, its sprint, so a status change can't
     // interleave with completing that sprint.
     const current = await lockIssue(tx, issueId);

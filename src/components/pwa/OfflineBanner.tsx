@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useSyncExternalStore } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
 
 /**
@@ -40,6 +40,34 @@ function subscribeOnline(listener: () => void) {
 const getOnline = () => navigator.onLine;
 const getServerOnline = () => true;
 
+/** Text fields whose content would be lost by reloading the document. */
+const TEXT_FIELDS =
+  'textarea, input:not([type]), input[type="text"], input[type="search"], input[type="url"], input[type="email"], input[type="tel"], input[type="number"]';
+
+/**
+ * Field values when the saved copy was shown (or the page went offline).
+ * React keeps a controlled input's defaultValue in sync with its value, so
+ * typing can't be detected from the DOM alone; compare with this snapshot.
+ */
+let fieldBaseline = new WeakMap<Element, string>();
+
+function snapshotFields() {
+  fieldBaseline = new WeakMap();
+  for (const field of document.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>(TEXT_FIELDS)) {
+    fieldBaseline.set(field, field.value);
+  }
+}
+
+/** The user typed something (or has a dialog open) that a reload would discard. */
+function hasUnsavedInput(): boolean {
+  if (document.querySelector('[aria-modal="true"]')) return true;
+  for (const field of document.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>(TEXT_FIELDS)) {
+    if (field.disabled || field.readOnly) continue;
+    if (field.value !== (fieldBaseline.get(field) ?? "")) return true;
+  }
+  return false;
+}
+
 const subscribeNever = () => () => {};
 const getSavedAt = () => savedAt;
 const getServerSavedAt = () => null;
@@ -66,6 +94,8 @@ export function OfflineBanner() {
   const router = useRouter();
   const online = useSyncExternalStore(subscribeOnline, getOnline, getServerOnline);
   const savedCopyAt = useSyncExternalStore(subscribeNever, getSavedAt, getServerSavedAt);
+  /** Back online on a saved copy with unsaved text: reloading is the user's call. */
+  const [reloadBlocked, setReloadBlocked] = useState(false);
 
   useEffect(() => {
     let disposed = false;
@@ -93,7 +123,10 @@ export function OfflineBanner() {
 
       if (reachable) {
         if (savedAt !== null) {
-          window.location.reload();
+          // A reload is the only way to get current data into a saved copy,
+          // but it would throw away anything typed into it while offline.
+          if (hasUnsavedInput()) setReloadBlocked(true);
+          else window.location.reload();
         } else {
           wentOffline = false;
           router.refresh();
@@ -110,6 +143,7 @@ export function OfflineBanner() {
     };
     const handleOffline = () => {
       wentOffline = true;
+      snapshotFields();
       clearTimeout(timer);
       timer = undefined;
     };
@@ -118,6 +152,7 @@ export function OfflineBanner() {
     };
 
     if (!navigator.onLine) wentOffline = true;
+    if (savedAt !== null || wentOffline) snapshotFields();
     window.addEventListener("online", handleOnline);
     window.addEventListener("offline", handleOffline);
     document.addEventListener("visibilitychange", handleVisibilityChange);
@@ -136,6 +171,27 @@ export function OfflineBanner() {
 
   const savedCopy = savedCopyAt !== null;
   const savedTime = savedCopy ? formatSavedAt(savedCopyAt) : null;
+
+  if (reloadBlocked) {
+    return (
+      <div role="status" className="shrink-0">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-sky-200 bg-sky-50 px-4 py-2 text-sm text-sky-900 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-200">
+          <p className="min-w-0 flex-1">
+            <span className="font-medium">Back online.</span>{" "}
+            This is still the saved copy. Copy anything you typed, then reload to see the latest
+            version.
+          </p>
+          <button
+            type="button"
+            onClick={() => window.location.reload()}
+            className="inline-flex min-h-9 items-center rounded-md border border-sky-300 bg-background px-3 text-sm font-medium text-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring dark:border-sky-500/40"
+          >
+            Reload
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div role="status" className="shrink-0">

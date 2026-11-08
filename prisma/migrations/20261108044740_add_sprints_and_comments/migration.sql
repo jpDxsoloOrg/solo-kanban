@@ -70,12 +70,13 @@ ALTER TABLE "Comment" ADD CONSTRAINT "Comment_parentId_fkey" FOREIGN KEY ("paren
 -- Data migration: give every existing project an active "Sprint 1" that holds
 -- all of its current issues, so the board looks exactly as it did before the
 -- upgrade. Completing that sprint is what clears out the DONE column.
--- Sprint dates are calendar dates stored at 12:00 UTC (src/lib/sprint-dates.ts):
--- it starts on the deploy's UTC day and, like a new project's Sprint 1, ends
--- 14 days later.
+-- Sprint dates are calendar dates stored at 12:00 UTC (src/lib/sprint-dates.ts);
+-- it starts on the deploy's UTC day. It gets no end date: the server can't know
+-- the user's time zone here, so a computed end would show a countdown that is
+-- a day off for anyone behind UTC. The user sets it with "Edit" on the board.
 -- ---------------------------------------------------------------------------
-INSERT INTO "Sprint" ("id", "number", "name", "status", "startDate", "endDate", "createdAt", "updatedAt", "projectId")
-SELECT gen_random_uuid()::text, 1, 'Sprint 1', 'ACTIVE', d.start, d.start + interval '14 days', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, p."id"
+INSERT INTO "Sprint" ("id", "number", "name", "status", "startDate", "createdAt", "updatedAt", "projectId")
+SELECT gen_random_uuid()::text, 1, 'Sprint 1', 'ACTIVE', d.start, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, p."id"
 FROM "Project" p
 CROSS JOIN (SELECT date_trunc('day', now() AT TIME ZONE 'UTC') + interval '12 hours' AS start) d;
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState, useCallback } from "react";
 import type { Comment } from "@prisma/client";
 import { addComment } from "@/actions/comment-actions";
 import type { CommentWithReplies } from "@/types";
@@ -32,6 +32,16 @@ export function CommentThreadItem({
 }: CommentThreadItemProps) {
   const repliesId = useId();
   const [expanded, setExpanded] = useState(false);
+  const [editingReplyIds, setEditingReplyIds] = useState<ReadonlySet<string>>(() => new Set());
+  const handleEditingChange = useCallback((commentId: string, isEditing: boolean) => {
+    setEditingReplyIds((prev) => {
+      if (prev.has(commentId) === isEditing) return prev;
+      const next = new Set(prev);
+      if (isEditing) next.add(commentId);
+      else next.delete(commentId);
+      return next;
+    });
+  }, []);
   const [replying, setReplying] = useState(false);
   const replyTextareaRef = useRef<HTMLTextAreaElement>(null);
   const replyOpenerRef = useRef<HTMLElement | null>(null);
@@ -64,7 +74,11 @@ export function CommentThreadItem({
   const { replies } = thread;
   const collapsible = replies.length > COLLAPSE_AFTER;
   const hiddenCount = collapsible && !expanded ? replies.length - VISIBLE_WHEN_COLLAPSED : 0;
-  const visibleReplies = replies.slice(hiddenCount);
+  // A reply being edited stays visible even when older replies collapse, so
+  // "Hide older replies" never throws away an open editor.
+  const visibleReplies = replies.filter(
+    (reply, index) => index >= hiddenCount || editingReplyIds.has(reply.id),
+  );
   const olderCount = replies.length - VISIBLE_WHEN_COLLAPSED;
 
   // Replying to a reply lands in the same thread (threads are one level deep).
@@ -130,6 +144,7 @@ export function CommentThreadItem({
                       onUpdated={onUpdated}
                       onDeleted={onDeleted}
                       onDraftOrphaned={onDraftOrphaned}
+                      onEditingChange={handleEditingChange}
                     />
                   </li>
                 ))}
