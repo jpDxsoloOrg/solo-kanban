@@ -47,6 +47,18 @@ const NAV_ITEMS: { segment: string; label: string; icon: React.ReactNode }[] = [
     ),
   },
   {
+    // Epics and sprints across all projects.
+    segment: "overview",
+    label: "Overview",
+    icon: (
+      <>
+        <path d="M12 3.5l8.5 4.5-8.5 4.5L3.5 8z" />
+        <path d="M3.5 12l8.5 4.5 8.5-4.5" />
+        <path d="M3.5 16l8.5 4.5 8.5-4.5" />
+      </>
+    ),
+  },
+  {
     segment: "settings",
     label: "Settings",
     icon: (
