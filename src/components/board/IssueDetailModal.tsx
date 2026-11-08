@@ -32,6 +32,13 @@ const statusOptions: { value: IssueStatus; label: string }[] = [
   { value: "DONE", label: "Done" },
 ];
 
+interface EditableFields {
+  title: string;
+  description: string;
+  status: IssueStatus;
+  priority: IssuePriority;
+}
+
 const priorityOptions: { value: IssuePriority; label: string }[] = [
   { value: "URGENT", label: "Urgent" },
   { value: "HIGH", label: "High" },
@@ -47,44 +54,63 @@ export function IssueDetailModal({ issue, onClose, onUpdate }: IssueDetailModalP
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  // Fields edited since the last save. Merged, so quick successive edits
+  // (a title, then the priority) are all saved, not just the last one.
+  const unsavedFieldsRef = useRef<Partial<EditableFields>>({});
 
-  // Track latest values for flush-on-unmount
-  const latestFieldsRef = useRef({ title, description, status, priority });
-  useEffect(() => {
-    latestFieldsRef.current = { title, description, status, priority };
-  }, [title, description, status, priority]);
+  /** Save the unsaved fields now (cancelling the debounce timer). */
+  const save = useCallback(async () => {
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current);
+      saveTimeoutRef.current = null;
+    }
+    const fields = unsavedFieldsRef.current;
+    if (Object.keys(fields).length === 0) return;
+    unsavedFieldsRef.current = {};
+
+    setIsSaving(true);
+    try {
+      const updated = await updateIssue(issue.id, fields);
+      onUpdate({ ...issue, ...updated });
+      setSaveError(null);
+    } catch (error) {
+      console.error("Failed to save:", error);
+      // Retry these with the next edit; newer values win.
+      unsavedFieldsRef.current = { ...fields, ...unsavedFieldsRef.current };
+      setSaveError("Couldn't save your changes. Keep editing to retry.");
+    } finally {
+      setIsSaving(false);
+    }
+  }, [issue, onUpdate]);
 
   // Auto-save with debounce
   const debouncedSave = useCallback(
-    (fields: Partial<{ title: string; description: string; status: IssueStatus; priority: IssuePriority }>) => {
+    (fields: Partial<EditableFields>) => {
+      unsavedFieldsRef.current = { ...unsavedFieldsRef.current, ...fields };
       if (saveTimeoutRef.current) {
         clearTimeout(saveTimeoutRef.current);
       }
-
-      saveTimeoutRef.current = setTimeout(async () => {
+      saveTimeoutRef.current = setTimeout(() => {
         saveTimeoutRef.current = null;
-        setIsSaving(true);
-        try {
-          const updated = await updateIssue(issue.id, fields);
-          onUpdate({ ...issue, ...updated });
-          setSaveError(null);
-        } catch (error) {
-          console.error("Failed to save:", error);
-          setSaveError("Couldn't save your changes. Keep editing to retry.");
-        } finally {
-          setIsSaving(false);
-        }
+        void save();
       }, 500);
     },
-    [issue, onUpdate]
+    [save]
   );
 
-  // Flush pending save on unmount
+  // Closing saves right away, before the page re-reads the issue.
+  const handleClose = () => {
+    void save();
+    onClose();
+  };
+
+  // Flush a pending save if the modal goes away some other way (navigation).
   useEffect(() => {
     return () => {
-      if (saveTimeoutRef.current) {
-        clearTimeout(saveTimeoutRef.current);
-        const fields = latestFieldsRef.current;
+      if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+      const fields = unsavedFieldsRef.current;
+      if (Object.keys(fields).length > 0) {
+        unsavedFieldsRef.current = {};
         updateIssue(issue.id, fields).catch(console.error);
       }
     };
@@ -111,11 +137,11 @@ export function IssueDetailModal({ issue, onClose, onUpdate }: IssueDetailModalP
   };
 
   return (
-    <Modal open onClose={onClose} title={`Edit #${issue.number}`} className="max-w-2xl">
+    <Modal open onClose={handleClose} title={`Edit #${issue.number}`} className="max-w-2xl">
       {/* Close button: phones have little backdrop left to tap */}
       <button
         type="button"
-        onClick={onClose}
+        onClick={handleClose}
         aria-label="Close"
         className="absolute top-3 right-3 inline-flex h-10 w-10 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:top-4 sm:right-4 pointer-fine:h-8 pointer-fine:w-8"
       >
@@ -226,7 +252,7 @@ export function IssueDetailModal({ issue, onClose, onUpdate }: IssueDetailModalP
             >
               {saveError ?? (isSaving ? "Saving..." : "")}
             </span>
-            <Button intent="primary" size="sm" className="h-9 shrink-0 pointer-fine:h-8" onClick={onClose}>
+            <Button intent="primary" size="sm" className="h-9 shrink-0 pointer-fine:h-8" onClick={handleClose}>
               Done
             </Button>
           </div>

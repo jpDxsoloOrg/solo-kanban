@@ -60,8 +60,10 @@ export default async function BoardPage({ params, searchParams }: BoardPageProps
       }
     >
       {activeSprint ? (
+        // Board follows refreshed issues itself (keeping open forms, menus
+        // and the phone tab); only a different sprint starts it fresh.
         <Board
-          key={JSON.stringify(issues.map((i) => i.id + i.status + i.order))}
+          key={activeSprint.id}
           issues={issues}
           projectId={projectId}
           epics={project.epics}

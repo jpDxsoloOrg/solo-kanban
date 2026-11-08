@@ -2,16 +2,19 @@
  * Solo Kanban service worker.
  *
  * - Precaches the /offline page (plus the CSS/JS/fonts it needs) and the icons.
- * - Cache-first for hashed build assets (/_next/static/*) and /icons/*.
+ * - Cache-first for hashed build assets (/_next/static/*) and /icons/*;
+ *   fonts (/_next/static/media/*) only while offline.
  * - Network-first for page navigations, falling back to the last cached copy
  *   of that page, then to /offline.
- * - Never touches anything else: server actions (POST / "Next-Action"),
- *   RSC/flight requests ("RSC" header or ?_rsc=), HMR, cross-origin requests.
+ * - Never touches anything else: API routes (/api/*, e.g. the live-update
+ *   revision poll, which must always reach the server), server actions
+ *   (POST / "Next-Action"), RSC/flight requests ("RSC" header or ?_rsc=),
+ *   HMR, cross-origin requests.
  *
  * Bump VERSION whenever this file's logic, the precache list or the icons
  * change; old caches are deleted when the new worker activates.
  */
-const VERSION = "v1";
+const VERSION = "v2";
 const PREFIX = "solo-kanban-";
 const PRECACHE = `${PREFIX}precache-${VERSION}`;
 const STATIC_CACHE = `${PREFIX}static-${VERSION}`;
@@ -73,6 +76,10 @@ self.addEventListener("fetch", (event) => {
   const url = new URL(request.url);
   if (url.origin !== self.location.origin) return;
 
+  // API routes are always live data (e.g. /api/revision for live updates):
+  // never intercepted, never cached.
+  if (url.pathname.startsWith("/api/")) return;
+
   // Next.js internals that must always hit the network.
   const { headers } = request;
   if (headers.has("next-action")) return;
@@ -86,6 +93,13 @@ self.addEventListener("fetch", (event) => {
     return;
   }
   if (url.pathname === "/sw.js") return;
+
+  // Fonts: while online, leave them to the browser (they're immutable and
+  // stay in its HTTP cache). When this worker serves a preloaded font,
+  // Chrome repeats its "preloaded but not used" console warning after every
+  // later request on the page, i.e. every live-update poll. Offline, use
+  // our copy.
+  if (url.pathname.startsWith("/_next/static/media/") && self.navigator.onLine) return;
 
   if (url.pathname.startsWith("/_next/static/") || url.pathname.startsWith("/icons/")) {
     event.respondWith(cacheFirst(event));

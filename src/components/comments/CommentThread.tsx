@@ -1,9 +1,10 @@
 "use client";
 
-import { useId, useRef, useState } from "react";
+import { useId, useRef } from "react";
 import type { Comment } from "@prisma/client";
 import { addComment } from "@/actions/comment-actions";
 import type { CommentWithReplies } from "@/types";
+import { useServerState } from "@/components/live/useServerState";
 import { CommentComposer } from "./CommentComposer";
 import { CommentThreadItem } from "./CommentThreadItem";
 
@@ -22,7 +23,9 @@ function scrollIntoViewSoon(elementId: string) {
 /**
  * The "Comments" section of the issue page. Comments live in client state
  * seeded from the server render and are updated from each action's result,
- * so posting, editing and deleting never needs a page refresh.
+ * so posting, editing and deleting never needs a page refresh. Refreshed
+ * server data (live updates from other tabs/devices) replaces that state;
+ * drafts, open editors and expanded threads are kept.
  */
 export function CommentThread(props: CommentThreadProps) {
   // Start from fresh state (and drop drafts) if the issue ever changes in place.
@@ -32,15 +35,20 @@ export function CommentThread(props: CommentThreadProps) {
 function CommentSection({ issueId, initialComments }: CommentThreadProps) {
   const headingId = useId();
   const headingRef = useRef<HTMLHeadingElement>(null);
-  const [threads, setThreads] = useState(initialComments);
+  const [threads, setThreads] = useServerState(initialComments);
 
   const total = threads.reduce((count, thread) => count + 1 + thread.replies.length, 0);
 
+  // The revalidated page data may already contain a new comment by the time
+  // an action's result arrives, so adds skip comments that are already there.
   const handleAdd = async (body: string) => {
     const result = await addComment(issueId, body);
     if (result.ok) {
-      setThreads((prev) => [...prev, { ...result.data, replies: [] }]);
-      scrollIntoViewSoon(`comment-${result.data.id}`);
+      const added = result.data;
+      setThreads((prev) =>
+        prev.some((thread) => thread.id === added.id) ? prev : [...prev, { ...added, replies: [] }],
+      );
+      scrollIntoViewSoon(`comment-${added.id}`);
     }
     return result;
   };
@@ -48,7 +56,9 @@ function CommentSection({ issueId, initialComments }: CommentThreadProps) {
   const handleReplyAdded = (reply: Comment) => {
     setThreads((prev) =>
       prev.map((thread) =>
-        thread.id === reply.parentId ? { ...thread, replies: [...thread.replies, reply] } : thread,
+        thread.id === reply.parentId && !thread.replies.some((r) => r.id === reply.id)
+          ? { ...thread, replies: [...thread.replies, reply] }
+          : thread,
       ),
     );
     scrollIntoViewSoon(`comment-${reply.id}`);
