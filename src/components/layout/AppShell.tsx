@@ -3,6 +3,7 @@
 import { isValidElement, ReactNode, useEffect, useRef, useState } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
 import { LiveRefresh } from "@/components/live/LiveRefresh";
+import { LiveIndicator } from "@/components/live/LiveUpdatesControl";
 import { AppIcon } from "./AppIcon";
 import { setSidebarCollapsed, useSidebarCollapsed } from "./sidebar-state";
 
@@ -174,6 +175,7 @@ export function AppShell({ sidebar, children, title }: AppShellProps) {
           <span className="min-w-0 truncate text-base font-semibold text-foreground">
             {heading}
           </span>
+          <LiveIndicator className="ml-auto mr-2" />
         </div>
       </header>
 
@@ -203,6 +205,7 @@ export function AppShell({ sidebar, children, title }: AppShellProps) {
           <div className="flex min-w-0 flex-1 items-center gap-2 md:sidebar-collapsed:hidden">
             <AppIcon className="h-6 w-6" />
             <span className="truncate text-sm font-semibold text-foreground">{APP_NAME}</span>
+            <LiveIndicator className="hidden md:inline-flex" />
           </div>
 
           {/* Phones: close the drawer */}

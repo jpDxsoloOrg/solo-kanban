@@ -4,19 +4,13 @@ import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { monitorForElements } from "@atlaskit/pragmatic-drag-and-drop/element/adapter";
 import { isLiveRefreshHeld, onLiveRefreshHoldsReleased } from "./live-refresh-hold";
+import { consumeRefreshOnEnable, type LiveSettings } from "./live-settings";
 
 const REVISION_URL = "/api/revision";
-/** Poll cadence while the user is around. */
-const ACTIVE_INTERVAL_MS = 5_000;
-/** Poll cadence after IDLE_AFTER_MS without any input. */
-const IDLE_INTERVAL_MS = 60_000;
-const IDLE_AFTER_MS = 5 * 60_000;
-/** Error backoff doubles from ACTIVE_INTERVAL_MS up to this. */
+/** Error backoff doubles from the chosen interval up to this (or the interval, if longer). */
 const MAX_BACKOFF_MS = 60_000;
 /** Focus/visibility/online checks closer together than this are skipped. */
 const MIN_CHECK_GAP_MS = 1_000;
-
-const INPUT_EVENTS = ["pointerdown", "keydown", "touchstart", "wheel", "scroll"] as const;
 
 const NON_TEXT_INPUT_TYPES = new Set([
   "button",
@@ -62,27 +56,32 @@ function isEditing(element: Element | null): boolean {
  * when it moves. Server components re-render with fresh data; client state
  * (open forms, drafts, selected tabs) survives because nothing remounts.
  *
- * - Polls every 5s while the page is visible and online, 60s after 5 min
- *   without input; checks at once on focus, visibility and reconnect.
+ * - Does nothing unless the user turned "Live updates" on (per device, see
+ *   live-settings.ts). Then polls at the chosen interval while the page is
+ *   visible and online, checks at once on focus, visibility and reconnect,
+ *   and refreshes once right after being switched on.
  * - Never more than one request in flight; exponential backoff on errors.
  * - Defers the refresh while the user is mid-interaction (typing, a modal
  *   open, dragging a card, an optimistic move saving) and applies it as soon
  *   as they're done.
  */
-export function useLiveRefresh(): void {
+export function useLiveRefresh({ enabled, intervalMs }: LiveSettings): void {
   const router = useRouter();
 
   useEffect(() => {
+    if (!enabled) return;
+
     let disposed = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
     let inFlight: AbortController | null = null;
     let failures = 0;
     let lastCheckAt = 0;
-    let lastInputAt = Date.now();
-    let idle = false;
     let dragging = false;
-    /** A newer revision was seen; the refresh waits for the user. */
-    let pendingRefresh = refreshPendingAcrossNavigation;
+    /**
+     * A newer revision was seen (or live updates were just switched on, so
+     * the page may be stale); the refresh waits for the user.
+     */
+    let pendingRefresh = refreshPendingAcrossNavigation || consumeRefreshOnEnable();
     refreshPendingAcrossNavigation = false;
     let stopWatchingForIdle: (() => void) | null = null;
     let retryTimer: ReturnType<typeof setTimeout> | undefined;
@@ -96,10 +95,9 @@ export function useLiveRefresh(): void {
       isEditing(document.activeElement);
 
     const nextDelay = () => {
-      idle = Date.now() - lastInputAt >= IDLE_AFTER_MS;
-      const base = idle ? IDLE_INTERVAL_MS : ACTIVE_INTERVAL_MS;
-      if (failures === 0) return base;
-      return Math.max(base, Math.min(ACTIVE_INTERVAL_MS * 2 ** failures, MAX_BACKOFF_MS));
+      if (failures === 0) return intervalMs;
+      const cap = Math.max(intervalMs, MAX_BACKOFF_MS);
+      return Math.min(intervalMs * 2 ** failures, cap);
     };
 
     const schedule = () => {
@@ -200,18 +198,8 @@ export function useLiveRefresh(): void {
       void check();
     };
 
-    const handleInput = () => {
-      lastInputAt = Date.now();
-      // Back from idle: return to the fast cadence (polls now if overdue).
-      if (idle) {
-        idle = false;
-        schedule();
-      }
-    };
-
     const handleVisibilityChange = () => {
       if (document.visibilityState === "visible") {
-        lastInputAt = Date.now();
         checkNow();
       } else {
         clearTimeout(timer);
@@ -240,9 +228,6 @@ export function useLiveRefresh(): void {
       },
     });
 
-    for (const type of INPUT_EVENTS) {
-      document.addEventListener(type, handleInput, { capture: true, passive: true });
-    }
     document.addEventListener("visibilitychange", handleVisibilityChange);
     window.addEventListener("focus", checkNow);
     window.addEventListener("pageshow", checkNow);
@@ -259,14 +244,11 @@ export function useLiveRefresh(): void {
       inFlight?.abort();
       stopWatchingForIdle?.();
       stopDragMonitor();
-      for (const type of INPUT_EVENTS) {
-        document.removeEventListener(type, handleInput, { capture: true });
-      }
       document.removeEventListener("visibilitychange", handleVisibilityChange);
       window.removeEventListener("focus", checkNow);
       window.removeEventListener("pageshow", checkNow);
       window.removeEventListener("online", handleOnline);
       window.removeEventListener("offline", handleOffline);
     };
-  }, [router]);
+  }, [router, enabled, intervalMs]);
 }

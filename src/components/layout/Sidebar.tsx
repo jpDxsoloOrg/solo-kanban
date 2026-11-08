@@ -1,6 +1,7 @@
 "use client";
 import { Toggle, Kbd } from "@dxsolo/ui";
 import { useTheme } from "@/components/theme/ThemeProvider";
+import { LiveUpdatesControl } from "@/components/live/LiveUpdatesControl";
 import { useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
@@ -104,8 +105,15 @@ export function Sidebar({ projectId, projects, epics, epicFilter }: SidebarProps
 
   // --- Project handlers ---
 
+  // Stay on the same section when switching projects (Backlog → Backlog,
+  // Overview → Overview). Pages tied to one project's records (an issue, a
+  // sprint report) fall back to the new project's board.
   const handleProjectSwitch = (newProjectId: string) => {
-    router.push(`/projects/${newProjectId}/board`);
+    const section = pathname.split("/")[3];
+    const keep = ["board", "backlog", "sprints", "overview", "settings"];
+    const isRecordPage = pathname.split("/").length > 4;
+    const target = section && keep.includes(section) && !isRecordPage ? section : "board";
+    router.push(`/projects/${newProjectId}/${target}`);
   };
 
   const openCreateProject = () => {
@@ -398,6 +406,7 @@ export function Sidebar({ projectId, projects, epics, epicFilter }: SidebarProps
           label="Dark Mode"
           size="sm"
         />
+        <LiveUpdatesControl />
       </div>
       {/* Create Project modal */}
       <Modal
