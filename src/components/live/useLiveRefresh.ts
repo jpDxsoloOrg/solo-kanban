@@ -41,11 +41,15 @@ let knownRevision: string | null = null;
  */
 let refreshPendingAcrossNavigation = false;
 
-/** Focus is somewhere the user types or picks a value. */
+/**
+ * Focus is somewhere the user types. A focused <select> doesn't count: it
+ * commits on change and holds no unsaved text, and it keeps focus after a
+ * pick, so counting it would defer refreshes until the user clicks elsewhere.
+ */
 function isEditing(element: Element | null): boolean {
   if (!(element instanceof HTMLElement)) return false;
   if (element.isContentEditable) return true;
-  if (element instanceof HTMLTextAreaElement || element instanceof HTMLSelectElement) return true;
+  if (element instanceof HTMLTextAreaElement) return true;
   if (element instanceof HTMLInputElement) return !NON_TEXT_INPUT_TYPES.has(element.type);
   return false;
 }

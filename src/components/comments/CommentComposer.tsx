@@ -31,6 +31,10 @@ export interface CommentComposerProps {
   onSubmit: (body: string) => Promise<ActionResult<unknown>>;
   /** When given, shows a Cancel button and Escape cancels. */
   onCancel?: () => void;
+  /** Text of the Cancel button. */
+  cancelLabel?: string;
+  /** Called with the draft as the user types (e.g. to keep it if the composer goes away). */
+  onValueChange?: (value: string) => void;
   autoFocus?: boolean;
   /** Lets the parent focus the textarea (e.g. "Reply" on an open composer). */
   textareaRef?: Ref<HTMLTextAreaElement>;
@@ -46,6 +50,8 @@ export function CommentComposer({
   pendingLabel,
   onSubmit,
   onCancel,
+  cancelLabel = "Cancel",
+  onValueChange,
   autoFocus = false,
   textareaRef,
   minHeightClass = "min-h-[96px]",
@@ -77,6 +83,7 @@ export function CommentComposer({
       const result = await onSubmit(trimmed);
       if (result.ok) {
         setValue("");
+        onValueChange?.("");
         setMode("write");
       } else {
         setError(result.error);
@@ -140,6 +147,7 @@ export function CommentComposer({
             value={value}
             onChange={(event) => {
               setValue(event.target.value);
+              onValueChange?.(event.target.value);
               if (error) setError(null);
             }}
             placeholder={placeholder}
@@ -198,7 +206,7 @@ export function CommentComposer({
             onClick={onCancel}
             disabled={pending}
           >
-            Cancel
+            {cancelLabel}
           </Button>
         )}
         <Button

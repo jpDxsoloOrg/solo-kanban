@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useLayoutEffect, useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { Button } from "@dxsolo/ui";
 import type { Epic, Issue, Sprint } from "@prisma/client";
 import { moveIssueToSprint } from "@/actions/sprint-actions";
 import {
@@ -36,19 +37,68 @@ const BACKLOG = "__backlog__";
 /**
  * One issue in a list: number + title (links to the issue page), status,
  * priority, epic, and an optional "Move to" sprint picker. Stacks on phones.
+ *
+ * Picking a target only selects it; the Move button next to the picker
+ * moves the issue. A native select changes value on arrow keys while closed
+ * (Windows, Linux), so acting on every change would move the issue as soon
+ * as a keyboard user looks through the options.
  */
 export function IssueRow({ issue, projectId, moveTargets }: IssueRowProps) {
   const router = useRouter();
+  const [choice, setChoice] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+  const rowRef = useRef<HTMLLIElement>(null);
 
-  const handleMove = (value: string) => {
-    if (!value) return;
-    const sprintId = value === BACKLOG ? null : value;
+  // A move takes the row out of this list (it re-renders in its new
+  // section). If it had focus, hand focus to a neighbouring row's picker, or
+  // the section, instead of dropping it on <body>. Layout cleanups run while
+  // the row is still in the document; the focus waits a frame so a page
+  // that's going away (navigation) is left alone.
+  useLayoutEffect(() => {
+    const row = rowRef.current;
+    return () => {
+      if (!row || !row.contains(document.activeElement)) return;
+      const neighbour = row.nextElementSibling ?? row.previousElementSibling;
+      const target =
+        neighbour?.querySelector<HTMLElement>("select:not(:disabled)") ??
+        row
+          .closest("section")
+          ?.querySelector<HTMLElement>("a[href], input:not(:disabled), button:not(:disabled)");
+      requestAnimationFrame(() => {
+        const focusLost = document.activeElement === null || document.activeElement === document.body;
+        if (target?.isConnected && focusLost) target.focus();
+      });
+    };
+  }, []);
+
+  const otherTargets = moveTargets?.filter((target) => target.id !== issue.sprintId) ?? [];
+  const options = [
+    ...(issue.sprintId !== null ? [{ value: BACKLOG, label: "Backlog" }] : []),
+    ...otherTargets.map((target) => ({
+      value: target.id,
+      label: `${target.name}${target.status === "ACTIVE" ? " (active)" : ""}`,
+    })),
+  ];
+  // A refresh may have removed the picked sprint.
+  const chosen = options.find((option) => option.value === choice);
+
+  const handleMove = () => {
+    if (!chosen || isPending) return;
+    const sprintId = chosen.value === BACKLOG ? null : chosen.value;
     setError(null);
     startTransition(async () => {
-      const result = await moveIssueToSprint(issue.id, sprintId);
+      let result: Awaited<ReturnType<typeof moveIssueToSprint>>;
+      try {
+        result = await moveIssueToSprint(issue.id, sprintId);
+      } catch (err) {
+        // Offline, server down, or a stale tab after a deploy. Thrown out of
+        // the transition it would replace the page with the error screen.
+        console.error("Failed to move issue:", err);
+        result = { ok: false, error: "Couldn't move the issue. Check your connection and try again." };
+      }
       if (!result.ok) {
+        // The pick stays, so Move retries it.
         setError(result.error);
         return;
       }
@@ -57,10 +107,8 @@ export function IssueRow({ issue, projectId, moveTargets }: IssueRowProps) {
     });
   };
 
-  const otherTargets = moveTargets?.filter((target) => target.id !== issue.sprintId) ?? [];
-
   return (
-    <li className={`px-3 py-2.5 sm:px-4 ${isPending ? "opacity-60" : ""}`}>
+    <li ref={rowRef} className={`px-3 py-2.5 sm:px-4 ${isPending ? "opacity-60" : ""}`}>
       <div className="flex flex-col gap-1.5 sm:flex-row sm:items-center sm:gap-3">
         <Link
           href={`/projects/${projectId}/issues/${issue.number}`}
@@ -93,24 +141,39 @@ export function IssueRow({ issue, projectId, moveTargets }: IssueRowProps) {
           )}
 
           {moveTargets && (
-            <select
-              value=""
-              onChange={(e) => handleMove(e.target.value)}
-              disabled={isPending}
-              aria-label={`Move #${issue.number} to`}
-              className={`${nativeSelectClass} ml-auto h-9 w-[6.75rem] shrink-0 pl-2 pr-1 text-xs sm:ml-1 sm:h-8 sm:w-32`}
-            >
-              <option value="" disabled>
-                {isPending ? "Moving…" : "Move to…"}
-              </option>
-              {issue.sprintId !== null && <option value={BACKLOG}>Backlog</option>}
-              {otherTargets.map((target) => (
-                <option key={target.id} value={target.id}>
-                  {target.name}
-                  {target.status === "ACTIVE" ? " (active)" : ""}
-                </option>
-              ))}
-            </select>
+            <div className="ml-auto flex shrink-0 items-center gap-1.5 sm:ml-1">
+              <select
+                value={chosen?.value ?? ""}
+                onChange={(e) => {
+                  if (isPending) return;
+                  setChoice(e.target.value);
+                  setError(null);
+                }}
+                aria-label={`Move #${issue.number} to`}
+                className={`${nativeSelectClass} h-9 w-[6.75rem] shrink-0 pl-2 pr-1 text-xs sm:h-8 sm:w-32`}
+              >
+                <option value="">Move to…</option>
+                {options.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+              {chosen && (
+                <Button
+                  type="button"
+                  intent="primary"
+                  size="sm"
+                  // aria-disabled, not disabled, so focus stays on the button.
+                  aria-disabled={isPending || undefined}
+                  aria-label={`Move #${issue.number} to ${chosen.label}`}
+                  onClick={handleMove}
+                  className="h-9 shrink-0 px-3 sm:h-8"
+                >
+                  {isPending ? "Moving…" : "Move"}
+                </Button>
+              )}
+            </div>
           )}
         </div>
       </div>

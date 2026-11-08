@@ -1,11 +1,12 @@
 "use client";
 
-import { useId, useRef } from "react";
+import { useCallback, useId, useRef, useState } from "react";
 import type { Comment } from "@prisma/client";
 import { addComment } from "@/actions/comment-actions";
 import type { CommentWithReplies } from "@/types";
 import { useServerState } from "@/components/live/useServerState";
 import { CommentComposer } from "./CommentComposer";
+import type { OrphanedDraft } from "./CommentItem";
 import { CommentThreadItem } from "./CommentThreadItem";
 
 export interface CommentThreadProps {
@@ -25,7 +26,8 @@ function scrollIntoViewSoon(elementId: string) {
  * seeded from the server render and are updated from each action's result,
  * so posting, editing and deleting never needs a page refresh. Refreshed
  * server data (live updates from other tabs/devices) replaces that state;
- * drafts, open editors and expanded threads are kept.
+ * drafts, open editors and expanded threads are kept. A reply or edit whose
+ * comment was deleted elsewhere is kept too, and offered as a new comment.
  */
 export function CommentThread(props: CommentThreadProps) {
   // Start from fresh state (and drop drafts) if the issue ever changes in place.
@@ -36,6 +38,33 @@ function CommentSection({ issueId, initialComments }: CommentThreadProps) {
   const headingId = useId();
   const headingRef = useRef<HTMLHeadingElement>(null);
   const [threads, setThreads] = useServerState(initialComments);
+  // Drafts whose comment disappeared in a refresh, offered as new comments.
+  const [orphans, setOrphans] = useState<{ id: number; kind: OrphanedDraft["kind"]; body: string }[]>(
+    [],
+  );
+  const nextOrphanId = useRef(0);
+  // Comments deleted from this page: their drafts go with them, as the
+  // delete confirmation says.
+  const deletedHereRef = useRef(new Set<string>());
+
+  const handleDraftOrphaned = useCallback((draft: OrphanedDraft) => {
+    if (draft.commentIds.some((id) => id !== null && deletedHereRef.current.has(id))) return;
+    nextOrphanId.current += 1;
+    const id = nextOrphanId.current;
+    setOrphans((prev) => [...prev, { id, kind: draft.kind, body: draft.body }]);
+    requestAnimationFrame(() => {
+      const panel = document.getElementById(`orphaned-draft-${id}`);
+      panel?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      // Focus went down with the removed comment: move it to the draft.
+      if (panel && (document.activeElement === null || document.activeElement === document.body)) {
+        panel.querySelector("textarea")?.focus({ preventScroll: true });
+      }
+    });
+  }, []);
+
+  const dismissOrphan = (id: number) => {
+    setOrphans((prev) => prev.filter((orphan) => orphan.id !== id));
+  };
 
   const total = threads.reduce((count, thread) => count + 1 + thread.replies.length, 0);
 
@@ -78,6 +107,7 @@ function CommentSection({ issueId, initialComments }: CommentThreadProps) {
   };
 
   const handleDeleted = (commentId: string) => {
+    deletedHereRef.current.add(commentId);
     setThreads((prev) =>
       prev
         .filter((thread) => thread.id !== commentId)
@@ -135,10 +165,40 @@ function CommentSection({ issueId, initialComments }: CommentThreadProps) {
               onReplyAdded={handleReplyAdded}
               onUpdated={handleUpdated}
               onDeleted={handleDeleted}
+              onDraftOrphaned={handleDraftOrphaned}
             />
           ))}
         </ol>
       )}
+
+      {orphans.map((orphan) => (
+        <div
+          key={orphan.id}
+          id={`orphaned-draft-${orphan.id}`}
+          className="mt-4 rounded-lg border border-amber-300 bg-amber-50/60 p-3 dark:border-amber-500/40 dark:bg-amber-500/10 sm:p-4"
+        >
+          <p role="alert" className="mb-2 text-sm text-foreground">
+            {orphan.kind === "reply"
+              ? "The comment you were replying to was deleted elsewhere, so your reply wasn't posted."
+              : "The comment you were editing was deleted elsewhere, so your changes weren't saved."}{" "}
+            You can post the text as a new comment.
+          </p>
+          <CommentComposer
+            label="Post your unsent text as a new comment"
+            initialValue={orphan.body}
+            submitLabel="Post as comment"
+            pendingLabel="Posting…"
+            cancelLabel="Discard"
+            onSubmit={async (body) => {
+              const result = await handleAdd(body);
+              if (result.ok) dismissOrphan(orphan.id);
+              return result;
+            }}
+            onCancel={() => dismissOrphan(orphan.id)}
+            minHeightClass="min-h-[72px]"
+          />
+        </div>
+      ))}
 
       <div className="mt-4">
         <CommentComposer

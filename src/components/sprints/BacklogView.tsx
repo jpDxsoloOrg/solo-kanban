@@ -48,7 +48,15 @@ export function BacklogView({ projectId, activeSprint, plannedSprints, backlogIs
     if (!sprint) return;
     setSprintError(null);
     startDelete(async () => {
-      const result = await deleteSprint(sprint.id);
+      let result: Awaited<ReturnType<typeof deleteSprint>>;
+      try {
+        result = await deleteSprint(sprint.id);
+      } catch (err) {
+        // Offline, server down, or a stale tab after a deploy. Thrown out of
+        // the transition it would replace the page with the error screen.
+        console.error("Failed to delete sprint:", err);
+        result = { ok: false, error: "Couldn't delete the sprint. Check your connection and try again." };
+      }
       if (!result.ok) {
         setDeleting(null);
         setSprintError({ sprintId: sprint.id, message: result.error });
