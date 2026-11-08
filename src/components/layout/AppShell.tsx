@@ -2,6 +2,7 @@
 
 import { isValidElement, ReactNode, useEffect, useRef, useState } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
+import { LiveRefresh } from "@/components/live/LiveRefresh";
 import { AppIcon } from "./AppIcon";
 import { setSidebarCollapsed, useSidebarCollapsed } from "./sidebar-state";
 
@@ -267,6 +268,9 @@ export function AppShell({ sidebar, children, title }: AppShellProps) {
       >
         {children}
       </main>
+
+      {/* Keeps every page in sync with changes made in other tabs/devices. */}
+      <LiveRefresh />
     </div>
   );
 }

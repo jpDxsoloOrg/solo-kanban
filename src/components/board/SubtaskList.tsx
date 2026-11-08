@@ -1,18 +1,29 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useMemo } from "react";
 import type { Subtask } from "@prisma/client";
 import { toggleSubtask, addSubtask, deleteSubtask } from "@/actions/subtask-actions";
 import { Button, Checkbox, Input } from "@dxsolo/ui";
+import { holdLiveRefresh } from "@/components/live/live-refresh-hold";
+import { useServerState } from "@/components/live/useServerState";
 
 interface SubtaskListProps {
   issueId: string;
   subtasks: Subtask[];
 }
 
-export function SubtaskList({ issueId, subtasks: initialSubtasks }: SubtaskListProps) {
-  const [subtasks, setSubtasks] = useState(() =>
-    [...initialSubtasks].sort((a, b) => a.order - b.order)
+export function SubtaskList({ issueId, subtasks: serverSubtasks }: SubtaskListProps) {
+  const sortedServerSubtasks = useMemo(
+    () => [...serverSubtasks].sort((a, b) => a.order - b.order),
+    [serverSubtasks]
+  );
+  // Number of add/toggle/delete requests still saving.
+  const [saving, setSaving] = useState(0);
+  // Follows refreshed server data (live updates from other tabs/devices),
+  // except while one of this list's own changes is saving.
+  const [subtasks, setSubtasks, skipPendingServerSubtasks] = useServerState(
+    sortedServerSubtasks,
+    saving > 0
   );
   const [newTitle, setNewTitle] = useState("");
   const [isAdding, setIsAdding] = useState(false);
@@ -20,6 +31,23 @@ export function SubtaskList({ issueId, subtasks: initialSubtasks }: SubtaskListP
   const inputRef = useRef<HTMLInputElement>(null);
 
   const completed = subtasks.filter((s) => s.completed).length;
+
+  /**
+   * Runs one of this list's saves. Until it's done, live refreshes wait and
+   * server data that arrives anyway is set aside: it may predate the save.
+   */
+  const trackSave = async <T,>(request: () => Promise<T>): Promise<T> => {
+    setSaving((n) => n + 1);
+    const releaseLiveRefresh = holdLiveRefresh();
+    try {
+      const result = await request();
+      skipPendingServerSubtasks();
+      return result;
+    } finally {
+      setSaving((n) => n - 1);
+      releaseLiveRefresh();
+    }
+  };
 
   const handleToggle = async (subtaskId: string, checked: boolean) => {
     // Optimistic update
@@ -29,7 +57,7 @@ export function SubtaskList({ issueId, subtasks: initialSubtasks }: SubtaskListP
     setError(null);
 
     try {
-      await toggleSubtask(subtaskId, checked);
+      await trackSave(() => toggleSubtask(subtaskId, checked));
     } catch (err) {
       console.error("Failed to toggle subtask:", err);
       // Rollback
@@ -47,8 +75,8 @@ export function SubtaskList({ issueId, subtasks: initialSubtasks }: SubtaskListP
     setIsAdding(true);
     setError(null);
     try {
-      const created = await addSubtask(issueId, trimmed, subtasks.length);
-      setSubtasks((prev) => [...prev, created]);
+      const created = await trackSave(() => addSubtask(issueId, trimmed, subtasks.length));
+      setSubtasks((prev) => (prev.some((s) => s.id === created.id) ? prev : [...prev, created]));
       setNewTitle("");
       inputRef.current?.focus();
     } catch (err) {
@@ -65,7 +93,7 @@ export function SubtaskList({ issueId, subtasks: initialSubtasks }: SubtaskListP
     setError(null);
 
     try {
-      await deleteSubtask(subtaskId);
+      await trackSave(() => deleteSubtask(subtaskId));
     } catch (err) {
       console.error("Failed to delete subtask:", err);
       setSubtasks(previous);

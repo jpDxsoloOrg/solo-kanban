@@ -14,6 +14,7 @@ import { STATUS_LABELS } from "./columns";
 import { getIssue } from "@/actions/get-issue";
 import { IssueSprintField } from "@/components/sprints/IssueSprintField";
 import { CommentThread } from "@/components/comments/CommentThread";
+import { useServerState } from "@/components/live/useServerState";
 
 const priorityLabel: Record<IssuePriority, string> = {
   URGENT: "Urgent",
@@ -38,25 +39,25 @@ interface IssueViewProps {
   sprints: SprintWithCounts[];
 }
 
-export function IssueView({ issue: initial, projectId, comments, sprints }: IssueViewProps) {
-  const [issue, setIssue] = useState(initial);
+export function IssueView({ issue: serverIssue, projectId, comments, sprints }: IssueViewProps) {
   const [editing, setEditing] = useState(false);
-  // Bumped after the edit modal closes so the page's subtask list picks up
-  // subtasks added or toggled inside the modal.
-  const [subtasksVersion, setSubtasksVersion] = useState(0);
+  // Follows refreshed server data (live updates from other tabs/devices),
+  // but not while the edit modal is open: it works on this copy.
+  const [issue, setIssue, skipPendingServerIssue] = useServerState(serverIssue, editing);
 
   const handleSprintChange = (sprint: Sprint | null) => {
     setIssue((prev) => ({ ...prev, sprintId: sprint?.id ?? null, sprint }));
   };
 
   const handleClose = async () => {
+    // The modal kept this copy up to date while it was open, and the fetch
+    // below picks up subtask changes made in it; data from refreshes that
+    // happened meanwhile may be older.
+    skipPendingServerIssue();
     setEditing(false);
     try {
       const fresh = await getIssue(issue.id);
-      if (fresh) {
-        setIssue(fresh);
-        setSubtasksVersion((v) => v + 1);
-      }
+      if (fresh) setIssue(fresh);
     } catch (error) {
       console.error("Failed to refresh issue:", error);
     }
@@ -120,7 +121,7 @@ export function IssueView({ issue: initial, projectId, comments, sprints }: Issu
         )}
       </div>
 
-      <SubtaskList key={subtasksVersion} issueId={issue.id} subtasks={issue.subtasks} />
+      <SubtaskList issueId={issue.id} subtasks={issue.subtasks} />
 
       <CommentThread issueId={issue.id} initialComments={comments} />
 

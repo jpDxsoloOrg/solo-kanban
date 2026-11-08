@@ -11,15 +11,16 @@ import { moveIssue } from "@/actions/move-issue";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { ShortcutsDialog } from "./ShortcutsDialog";
 import { BOARD_COLUMNS, STATUS_DOT_CLASSES, STATUS_LABELS, columnDomId } from "./columns";
+import { holdLiveRefresh } from "@/components/live/live-refresh-hold";
+import { useServerState } from "@/components/live/useServerState";
 
 const COLUMNS = BOARD_COLUMNS;
 
 /**
- * The status tab picked on phones, per sprint. The board page keys <Board>
- * on its issues, so it remounts after every server refresh (e.g. creating an
- * issue); this keeps the user on the column they were looking at. It is only
- * written from event handlers, so server render and hydration always start
- * on "Open".
+ * The status tab picked on phones, per sprint, so coming back to the board
+ * (a client-side navigation remounts it) keeps the user on the column they
+ * were looking at. It is only written from event handlers, so server render
+ * and hydration always start on "Open".
  */
 const lastActiveStatus = new Map<string, IssueStatus>();
 
@@ -53,8 +54,10 @@ export function Board({
   plannedSprints,
 }: BoardProps) {
   const router = useRouter();
-  const [issues, setIssues] = useState(initialIssues);
   const [isMoving, setIsMoving] = useState(false);
+  // Follows refreshed server data (live updates from other tabs/devices,
+  // revalidation), except while an optimistic move is saving.
+  const [issues, setIssues, skipPendingServerIssues] = useServerState(initialIssues, isMoving);
   const [showShortcuts, setShowShortcuts] = useState(false);
   const [showCreateInOpen, setShowCreateInOpen] = useState(false);
   const [activeStatus, setActiveStatusState] = useState<IssueStatus>(
@@ -119,6 +122,9 @@ export function Board({
     async (issueId: string, newStatus: IssueStatus, newOrder: number): Promise<boolean> => {
       if (isMoving) return false;
       setIsMoving(true);
+      // No live refresh until the move is saved: it would show the card's
+      // old position for a moment.
+      const releaseLiveRefresh = holdLiveRefresh();
 
       const previousIssues = issues;
 
@@ -150,6 +156,9 @@ export function Board({
 
       try {
         await moveIssue(issueId, newStatus, newOrder);
+        // Server data that arrived while saving may predate the move; the
+        // next live refresh brings the saved positions.
+        skipPendingServerIssues();
         return true;
       } catch (error) {
         console.error("Failed to move issue:", error);
@@ -162,9 +171,10 @@ export function Board({
         return false;
       } finally {
         setIsMoving(false);
+        releaseLiveRefresh();
       }
     },
-    [issues, isMoving, showToast]
+    [issues, isMoving, setIssues, skipPendingServerIssues, showToast]
   );
 
   /** "Move" menu: append the card to the end of another column. */
@@ -198,9 +208,13 @@ export function Board({
     [issues, isMoving, handleMoveIssue, showToast]
   );
 
-  const handleIssueCreated = useCallback((issue: IssueWithRelations) => {
-    setIssues((prev) => [...prev, issue]);
-  }, []);
+  const handleIssueCreated = useCallback(
+    (issue: IssueWithRelations) => {
+      // The revalidated board data may already include it.
+      setIssues((prev) => (prev.some((i) => i.id === issue.id) ? prev : [...prev, issue]));
+    },
+    [setIssues]
+  );
 
   const issuesByStatus = COLUMNS.map((col) => {
     const columnIssues = issues
