@@ -53,7 +53,7 @@ export function CreateIssueForm({
       setEpicId("");
     } catch (error) {
       console.error("Failed to create issue:", error);
-      setError("Couldn't create the issue. Please try again.");
+      setError("Couldn't create the issue. Reload the board and try again.");
     } finally {
       setIsCreating(false);
     }

@@ -4,7 +4,12 @@ import { prisma } from "@/lib/prisma";
 import { revalidatePath } from "next/cache";
 import type { Prisma, Sprint } from "@prisma/client";
 import type { ActionResult, SprintWithCounts } from "@/types";
-import { lockIssue, moveIssuesToSprint, ORDER_TRANSACTION_OPTIONS } from "@/lib/issue-order";
+import {
+  lockIssue,
+  lockProjectOrdering,
+  moveIssuesToSprint,
+  ORDER_TRANSACTION_OPTIONS,
+} from "@/lib/issue-order";
 import {
   addDays,
   DEFAULT_SPRINT_LENGTH_DAYS,
@@ -110,7 +115,15 @@ function checkDateOrder(startDate: Date | null | undefined, endDate: Date | null
  * issue changes that hold the sprint (`lockIssue` takes FOR KEY SHARE) and
  * makes later ones wait until this transaction ends.
  */
+/**
+ * Lock a sprint for a change that re-orders its issues (complete, delete).
+ * The project's ordering lock comes first, as in every other path that
+ * re-orders columns, so the locks are always taken in the same order and
+ * can't deadlock with board moves.
+ */
 async function lockSprintForUpdate(tx: Prisma.TransactionClient, sprintId: string) {
+  const owner = await tx.sprint.findUnique({ where: { id: sprintId }, select: { projectId: true } });
+  if (owner) await lockProjectOrdering(tx, owner.projectId);
   await tx.$queryRaw`SELECT 1 FROM "Sprint" WHERE "id" = ${sprintId} FOR UPDATE`;
 }
 
@@ -407,6 +420,9 @@ export async function moveIssueToSprint(
 ): Promise<ActionResult<{ sprintId: string | null }>> {
   try {
     const projectId = await prisma.$transaction(async (tx) => {
+      const owner = await tx.issue.findUnique({ where: { id: issueId }, select: { projectId: true } });
+      if (!owner) throw new Error("Issue not found.");
+      await lockProjectOrdering(tx, owner.projectId);
       const issue = await lockIssue(tx, issueId);
       if (!issue) throw new Error("Issue not found.");
       // Finished work stays with the sprint it was completed in.

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useId, useRef, useState, useEffect } from "react";
+import { useCallback, useId, useLayoutEffect, useRef, useState } from "react";
 import type { Comment } from "@prisma/client";
 import { addComment } from "@/actions/comment-actions";
 import type { CommentWithReplies } from "@/types";
@@ -49,8 +49,10 @@ function CommentSection({ issueId, initialComments }: CommentThreadProps) {
 
   // Latest threads, so an unmounted editor can tell "deleted elsewhere" from
   // "merely hidden" (e.g. its thread was collapsed).
+  // A layout effect, so it's already current when a removed comment's
+  // (passive) cleanup reports its draft in the same commit.
   const threadsRef = useRef(threads);
-  useEffect(() => {
+  useLayoutEffect(() => {
     threadsRef.current = threads;
   }, [threads]);
 

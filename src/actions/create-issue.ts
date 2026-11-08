@@ -3,7 +3,11 @@
 import { prisma } from "@/lib/prisma";
 import type { IssuePriority, IssueStatus } from "@prisma/client";
 import { revalidatePath } from "next/cache";
-import { nextOrderInColumn } from "@/lib/issue-order";
+import {
+  lockProjectOrdering,
+  nextOrderInColumn,
+  ORDER_TRANSACTION_OPTIONS,
+} from "@/lib/issue-order";
 
 export interface CreateIssueInput {
   projectId: string;
@@ -27,6 +31,9 @@ export async function createIssue({
   if (!trimmed) throw new Error("Issue title can't be empty.");
 
   const issue = await prisma.$transaction(async (tx) => {
+    // Appending computes max(order) + 1: serialize with board moves.
+    await lockProjectOrdering(tx, projectId);
+
     if (sprintId) {
       // KEY SHARE lock: waits for a completeSprint in progress (which holds
       // the sprint FOR UPDATE), so a new card can't land in a sprint that is
@@ -62,7 +69,7 @@ export async function createIssue({
         _count: { select: { comments: true } },
       },
     });
-  });
+  }, ORDER_TRANSACTION_OPTIONS);
 
   revalidatePath(`/projects/${projectId}`, "layout");
   return issue;

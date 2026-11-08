@@ -18,6 +18,7 @@ import { updateIssue } from "@/actions/update-issue";
 import { MarkdownPreview } from "./MarkdownPreview";
 import { SubtaskList } from "./SubtaskList";
 import { LocalDate } from "@/components/common/LocalDate";
+import { useSavedCopyAt } from "@/components/pwa/saved-copy";
 
 interface IssueDetailModalProps {
   issue: IssueWithRelations;
@@ -62,6 +63,9 @@ export function IssueDetailModal({ issue, onClose, onUpdate }: IssueDetailModalP
   // Saves still waiting for the server; closing waits for them.
   const inFlightRef = useRef(new Set<Promise<boolean>>());
   const closingRef = useRef(false);
+  // A saved copy (served offline by the service worker) shows old data:
+  // saving its fields would overwrite newer changes made elsewhere.
+  const isSavedCopy = useSavedCopyAt() !== null;
 
   /**
    * Save the unsaved fields now (cancelling the debounce timer). Resolves
@@ -75,6 +79,7 @@ export function IssueDetailModal({ issue, onClose, onUpdate }: IssueDetailModalP
     const fields = unsavedFieldsRef.current;
     if (Object.keys(fields).length === 0) return true;
     unsavedFieldsRef.current = {};
+    if (isSavedCopy) return true;
 
     setIsSaving(true);
     const request = (async () => {
@@ -100,11 +105,12 @@ export function IssueDetailModal({ issue, onClose, onUpdate }: IssueDetailModalP
     } finally {
       inFlightRef.current.delete(request);
     }
-  }, [issue, onUpdate]);
+  }, [issue, onUpdate, isSavedCopy]);
 
   // Auto-save with debounce
   const debouncedSave = useCallback(
     (fields: Partial<EditableFields>) => {
+      if (isSavedCopy) return;
       unsavedFieldsRef.current = { ...unsavedFieldsRef.current, ...fields };
       if (saveTimeoutRef.current) {
         clearTimeout(saveTimeoutRef.current);
@@ -114,7 +120,7 @@ export function IssueDetailModal({ issue, onClose, onUpdate }: IssueDetailModalP
         void save();
       }, 500);
     },
-    [save]
+    [save, isSavedCopy]
   );
 
   // Closing saves right away, before the page re-reads the issue. If that
@@ -186,6 +192,16 @@ export function IssueDetailModal({ issue, onClose, onUpdate }: IssueDetailModalP
       </button>
 
       <div className="flex flex-col gap-5 sm:gap-6">
+        {isSavedCopy && (
+          <p
+            role="note"
+            className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200"
+          >
+            This is a saved copy from while you were offline, so changes here aren&apos;t saved.
+            Copy anything you typed, then reload once you&apos;re online to edit the latest version.
+          </p>
+        )}
+
         {/* Title */}
         <input
           type="text"
@@ -246,7 +262,7 @@ export function IssueDetailModal({ issue, onClose, onUpdate }: IssueDetailModalP
             <TabsTrigger value="preview">Preview</TabsTrigger>
           </TabsList>
 
-          <TabsContent value="write">
+          <TabsContent value="write" className="rounded-md focus-visible:ring-2 focus-visible:ring-ring">
             <Textarea
               value={description}
               onChange={(e) => handleDescriptionChange(e.target.value)}
@@ -256,7 +272,7 @@ export function IssueDetailModal({ issue, onClose, onUpdate }: IssueDetailModalP
             />
           </TabsContent>
 
-          <TabsContent value="preview">
+          <TabsContent value="preview" className="rounded-md focus-visible:ring-2 focus-visible:ring-ring">
             <div className="min-h-[160px] rounded-md border border-border bg-background p-3 sm:min-h-[200px]">
               {description ? (
                 <MarkdownPreview content={description} />

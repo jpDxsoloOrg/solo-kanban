@@ -72,3 +72,21 @@ export function LiveIndicator({ className = "" }: { className?: string }) {
     </span>
   );
 }
+
+/** Just the pulsing dot: for the collapsed desktop sidebar rail. */
+export function LiveDot({ className = "" }: { className?: string }) {
+  const { enabled, intervalMs } = useLiveSettings();
+  if (!enabled) return null;
+  return (
+    <span
+      className={`h-2.5 w-2.5 ${className}`}
+      title={`Live updates on: checking every ${intervalLabel(intervalMs)}`}
+    >
+      <span className="relative flex h-2.5 w-2.5">
+        <span className="absolute inline-flex h-full w-full rounded-full bg-green-500 opacity-60 motion-safe:animate-ping" />
+        <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-green-500 ring-2 ring-background" />
+      </span>
+      <span className="sr-only">Live updates on</span>
+    </span>
+  );
+}

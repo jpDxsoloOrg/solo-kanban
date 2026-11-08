@@ -137,7 +137,7 @@ export function CommentComposer({
           <span className="text-xs text-muted-foreground">Markdown supported</span>
         </div>
 
-        <TabsContent value="write">
+        <TabsContent value="write" className="rounded-md focus-visible:ring-2 focus-visible:ring-ring">
           <label htmlFor={textareaId} className="sr-only">
             {label}
           </label>
@@ -162,7 +162,7 @@ export function CommentComposer({
           />
         </TabsContent>
 
-        <TabsContent value="preview">
+        <TabsContent value="preview" className="rounded-md focus-visible:ring-2 focus-visible:ring-ring">
           <div
             className={`${minHeightClass} rounded-md border border-border bg-muted/30 px-3 py-2`}
           >

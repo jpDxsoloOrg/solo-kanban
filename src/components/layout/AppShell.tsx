@@ -3,7 +3,7 @@
 import { isValidElement, ReactNode, useEffect, useRef, useState } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
 import { LiveRefresh } from "@/components/live/LiveRefresh";
-import { LiveIndicator } from "@/components/live/LiveUpdatesControl";
+import { LiveDot, LiveIndicator } from "@/components/live/LiveUpdatesControl";
 import { OfflineBanner } from "@/components/pwa/OfflineBanner";
 import { AppIcon } from "./AppIcon";
 import { setSidebarCollapsed, useSidebarCollapsed } from "./sidebar-state";
@@ -238,8 +238,10 @@ export function AppShell({ sidebar, children, title }: AppShellProps) {
             aria-controls="app-sidebar-content"
             aria-expanded={!collapsed}
             title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-            className="hidden h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring md:inline-flex"
+            className="relative hidden h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring md:inline-flex"
           >
+            {/* The "Live" badge is hidden with the rest of the header when collapsed. */}
+            <LiveDot className="absolute -top-0.5 -right-0.5 hidden md:sidebar-collapsed:block" />
             <svg
               aria-hidden="true"
               viewBox="0 0 24 24"

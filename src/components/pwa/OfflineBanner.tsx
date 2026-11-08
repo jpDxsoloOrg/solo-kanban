@@ -2,26 +2,14 @@
 
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
+import { savedCopyAt, useSavedCopyAt } from "./saved-copy";
 
-/**
- * public/sw.js adds this to pages it serves from its cache because the
- * network failed; its content is when the copy was saved ("" if unknown).
- */
-const SAVED_COPY_SELECTOR = 'meta[name="sk-saved-copy"]';
 /** Succeeds only when the server and its database can be reached. */
 const PROBE_URL = "/api/revision";
 const RETRY_MIN_MS = 2_000;
 const RETRY_MAX_MS = 60_000;
 
-/**
- * When this document is a saved copy: its save time, else null. Read before
- * hydration, and fixed for the life of the document (client-side
- * navigations keep it).
- */
-const savedAt: string | null =
-  typeof document === "undefined"
-    ? null
-    : (document.querySelector<HTMLMetaElement>(SAVED_COPY_SELECTOR)?.content ?? null);
+const savedAt = savedCopyAt;
 
 /**
  * The page went offline and hasn't been refreshed since: it may be out of
@@ -40,37 +28,44 @@ function subscribeOnline(listener: () => void) {
 const getOnline = () => navigator.onLine;
 const getServerOnline = () => true;
 
-/** Text fields whose content would be lost by reloading the document. */
-const TEXT_FIELDS =
-  'textarea, input:not([type]), input[type="text"], input[type="search"], input[type="url"], input[type="email"], input[type="tel"], input[type="number"]';
+const TEXT_INPUT_TYPES = new Set(["text", "search", "url", "email", "tel", "number"]);
 
 /**
- * Field values when the saved copy was shown (or the page went offline).
- * React keeps a controlled input's defaultValue in sync with its value, so
- * typing can't be detected from the DOM alone; compare with this snapshot.
+ * Text fields typed into since the page went offline or the saved copy was
+ * shown. (Typing can't be read off the DOM afterwards: React keeps a
+ * controlled input's defaultValue in step with its value.)
  */
-let fieldBaseline = new WeakMap<Element, string>();
+const typedFields = new Set<HTMLInputElement | HTMLTextAreaElement>();
+let trackingInput = false;
 
-function snapshotFields() {
-  fieldBaseline = new WeakMap();
-  for (const field of document.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>(TEXT_FIELDS)) {
-    fieldBaseline.set(field, field.value);
+function recordTyping(event: Event) {
+  const field = event.target;
+  if (
+    field instanceof HTMLTextAreaElement ||
+    (field instanceof HTMLInputElement && TEXT_INPUT_TYPES.has(field.type))
+  ) {
+    typedFields.add(field);
   }
 }
 
-/** The user typed something (or has a dialog open) that a reload would discard. */
+function startTrackingInput() {
+  if (trackingInput) return;
+  trackingInput = true;
+  document.addEventListener("input", recordTyping, true);
+}
+
+/** Something typed while offline that reloading the document would discard. */
 function hasUnsavedInput(): boolean {
-  if (document.querySelector('[aria-modal="true"]')) return true;
-  for (const field of document.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>(TEXT_FIELDS)) {
-    if (field.disabled || field.readOnly) continue;
-    if (field.value !== (fieldBaseline.get(field) ?? "")) return true;
+  for (const field of typedFields) {
+    if (!field.isConnected) {
+      typedFields.delete(field);
+      continue;
+    }
+    if (!field.disabled && !field.readOnly && field.value.trim() !== "") return true;
   }
   return false;
 }
 
-const subscribeNever = () => () => {};
-const getSavedAt = () => savedAt;
-const getServerSavedAt = () => null;
 
 function formatSavedAt(value: string): string | null {
   const date = new Date(value);
@@ -93,7 +88,7 @@ function formatSavedAt(value: string): string | null {
 export function OfflineBanner() {
   const router = useRouter();
   const online = useSyncExternalStore(subscribeOnline, getOnline, getServerOnline);
-  const savedCopyAt = useSyncExternalStore(subscribeNever, getSavedAt, getServerSavedAt);
+  const savedCopyTime = useSavedCopyAt();
   /** Back online on a saved copy with unsaved text: reloading is the user's call. */
   const [reloadBlocked, setReloadBlocked] = useState(false);
 
@@ -129,6 +124,7 @@ export function OfflineBanner() {
           else window.location.reload();
         } else {
           wentOffline = false;
+          typedFields.clear();
           router.refresh();
         }
         return;
@@ -143,7 +139,9 @@ export function OfflineBanner() {
     };
     const handleOffline = () => {
       wentOffline = true;
-      snapshotFields();
+      // Offline again: show the offline banner, not "Back online".
+      setReloadBlocked(false);
+      startTrackingInput();
       clearTimeout(timer);
       timer = undefined;
     };
@@ -152,7 +150,7 @@ export function OfflineBanner() {
     };
 
     if (!navigator.onLine) wentOffline = true;
-    if (savedAt !== null || wentOffline) snapshotFields();
+    if (savedAt !== null || wentOffline) startTrackingInput();
     window.addEventListener("online", handleOnline);
     window.addEventListener("offline", handleOffline);
     document.addEventListener("visibilitychange", handleVisibilityChange);
@@ -169,10 +167,10 @@ export function OfflineBanner() {
     };
   }, [router]);
 
-  const savedCopy = savedCopyAt !== null;
-  const savedTime = savedCopy ? formatSavedAt(savedCopyAt) : null;
+  const savedCopy = savedCopyTime !== null;
+  const savedTime = savedCopy ? formatSavedAt(savedCopyTime) : null;
 
-  if (reloadBlocked) {
+  if (reloadBlocked && online) {
     return (
       <div role="status" className="shrink-0">
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-sky-200 bg-sky-50 px-4 py-2 text-sm text-sky-900 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-200">
