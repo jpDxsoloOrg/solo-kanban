@@ -168,6 +168,12 @@ export function Sidebar({ projectId, projects, epics, epicFilter }: SidebarProps
         <Button intent="ghost" className="justify-start w-full font-medium" onClick={() => router.push(`/projects/${projectId}/board`)}>
           Board
         </Button>
+        <Button intent="ghost" className="justify-start w-full font-medium" onClick={() => router.push(`/projects/${projectId}/backlog`)}>
+          Backlog
+        </Button>
+        <Button intent="ghost" className="justify-start w-full font-medium" onClick={() => router.push(`/projects/${projectId}/sprints`)}>
+          Sprints
+        </Button>
         <Button intent="ghost" className="justify-start w-full font-medium" onClick={() => router.push(`/projects/${projectId}/settings`)}>
           Settings
         </Button>

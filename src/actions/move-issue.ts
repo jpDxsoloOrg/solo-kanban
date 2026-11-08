@@ -3,6 +3,10 @@
 import { prisma } from "@/lib/prisma";
 import { IssueStatus } from "@prisma/client";
 
+/**
+ * Drag-and-drop move on the board. Orders are scoped to the issue's own
+ * sprint (or the backlog), so moving never disturbs other sprints' columns.
+ */
 export async function moveIssue(
   issueId: string,
   newStatus: IssueStatus,
@@ -11,7 +15,7 @@ export async function moveIssue(
   // Get the issue to find its project
   const issue = await prisma.issue.findUnique({
     where: { id: issueId },
-    select: { projectId: true, status: true, order: true },
+    select: { projectId: true, sprintId: true, status: true, order: true },
   });
 
   if (!issue) {
@@ -33,6 +37,7 @@ export async function moveIssue(
       await tx.issue.updateMany({
         where: {
           projectId: issue.projectId,
+          sprintId: issue.sprintId,
           status: oldStatus,
           order: { gt: oldOrder },
         },
@@ -48,6 +53,7 @@ export async function moveIssue(
       await tx.issue.updateMany({
         where: {
           projectId: issue.projectId,
+          sprintId: issue.sprintId,
           status: newStatus,
           order: { gte: newOrder },
         },
@@ -62,6 +68,7 @@ export async function moveIssue(
         await tx.issue.updateMany({
           where: {
             projectId: issue.projectId,
+          sprintId: issue.sprintId,
             status: newStatus,
             order: { gt: oldOrder, lte: newOrder },
             id: { not: issueId },
@@ -75,6 +82,7 @@ export async function moveIssue(
         await tx.issue.updateMany({
           where: {
             projectId: issue.projectId,
+          sprintId: issue.sprintId,
             status: newStatus,
             order: { gte: newOrder, lt: oldOrder },
             id: { not: issueId },

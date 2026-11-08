@@ -12,7 +12,12 @@ import { Tooltip } from "@dxsolo/ui";
 interface ColumnProps {
   status: IssueStatus;
   label: string;
+  /** Issues to display (may be narrowed by the epic filter). */
   issues: IssueWithRelations[];
+  /** Size of the whole column, ignoring filters; used to append on drop. */
+  totalCount: number;
+  /** Sprint new issues in this column are created in. */
+  sprintId: string;
   onMoveIssue: (issueId: string, newStatus: IssueStatus, newOrder: number) => void;
   onSelectIssue: (issue: IssueWithRelations) => void;
   projectId: string;
@@ -43,7 +48,7 @@ const emptyMessages: Record<IssueStatus, string> = {
   DONE: "No completed issues yet.",
 };
 
-export function Column({ status, label, issues, onMoveIssue, onSelectIssue, projectId, epics, onIssueCreated, showCreateForm: externalShowCreate, onCreateFormChange }: ColumnProps) {
+export function Column({ status, label, issues, totalCount, sprintId, onMoveIssue, onSelectIssue, projectId, epics, onIssueCreated, showCreateForm: externalShowCreate, onCreateFormChange }: ColumnProps) {
   const ref = useRef<HTMLDivElement>(null);
   const [isDraggedOver, setIsDraggedOver] = useState(false);
   const [internalShowCreate, setInternalShowCreate] = useState(false);
@@ -78,11 +83,11 @@ export function Column({ status, label, issues, onMoveIssue, onSelectIssue, proj
         if (sourceStatus === status) return;
 
         // Dropping on the column itself puts the card at the end
-        const newOrder = issues.length;
+        const newOrder = totalCount;
         onMoveIssue(issueId, status, newOrder);
       },
     });
-  }, [status, issues.length, onMoveIssue]);
+  }, [status, totalCount, onMoveIssue]);
 
   return (
     <div
@@ -135,6 +140,7 @@ export function Column({ status, label, issues, onMoveIssue, onSelectIssue, proj
         {showCreateForm && (
           <CreateIssueForm
             projectId={projectId}
+            sprintId={sprintId}
             status={status}
             epics={epics}
             onCreated={onIssueCreated}

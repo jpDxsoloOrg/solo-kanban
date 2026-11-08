@@ -7,9 +7,11 @@ export async function getIssue(issueId: string) {
     where: { id: issueId },
     include: {
       epic: true,
+      sprint: true,
       subtasks: {
         orderBy: { order: "asc" },
       },
+      _count: { select: { comments: true } },
     },
   });
 }

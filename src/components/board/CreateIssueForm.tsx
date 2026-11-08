@@ -8,6 +8,8 @@ import type { IssueWithRelations } from "@/types";
 
 interface CreateIssueFormProps {
   projectId: string;
+  /** Sprint to create the issue in; null creates it in the backlog. */
+  sprintId: string | null;
   status: IssueStatus;
   epics: Epic[];
   onCreated: (issue: IssueWithRelations) => void;
@@ -16,6 +18,7 @@ interface CreateIssueFormProps {
 
 export function CreateIssueForm({
   projectId,
+  sprintId,
   status,
   epics,
   onCreated,
@@ -36,7 +39,13 @@ export function CreateIssueForm({
 
     setIsCreating(true);
     try {
-      const issue = await createIssue(projectId, trimmed, status, epicId || undefined);
+      const issue = await createIssue({
+        projectId,
+        title: trimmed,
+        status,
+        epicId: epicId || null,
+        sprintId,
+      });
       onCreated(issue);
       setTitle("");
       setEpicId("");

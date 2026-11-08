@@ -3,12 +3,15 @@
 import { useState } from "react";
 import Link from "next/link";
 import { Button, Badge } from "@dxsolo/ui";
-import type { IssueWithRelations } from "@/types";
+import type { CommentWithReplies, IssueWithRelations, SprintWithCounts } from "@/types";
+import type { Sprint } from "@prisma/client";
 import { IssueStatus, IssuePriority } from "@prisma/client";
 import { IssueDetailModal } from "./IssueDetailModal";
 import { MarkdownPreview } from "./MarkdownPreview";
 import { SubtaskList } from "./SubtaskList";
 import { getIssue } from "@/actions/get-issue";
+import { IssueSprintField } from "@/components/sprints/IssueSprintField";
+import { CommentThread } from "@/components/comments/CommentThread";
 
 const statusLabel: Record<IssueStatus, string> = {
   OPEN: "Open",
@@ -34,11 +37,19 @@ const priorityClass: Record<IssuePriority, string> = {
 interface IssueViewProps {
   issue: IssueWithRelations;
   projectId: string;
+  /** Top-level comments with their replies, oldest first. */
+  comments: CommentWithReplies[];
+  /** ACTIVE and PLANNED sprints the issue can be moved into. */
+  sprints: SprintWithCounts[];
 }
 
-export function IssueView({ issue: initial, projectId }: IssueViewProps) {
+export function IssueView({ issue: initial, projectId, comments, sprints }: IssueViewProps) {
   const [issue, setIssue] = useState(initial);
   const [editing, setEditing] = useState(false);
+
+  const handleSprintChange = (sprint: Sprint | null) => {
+    setIssue((prev) => ({ ...prev, sprintId: sprint?.id ?? null, sprint }));
+  };
 
   const handleClose = async () => {
     setEditing(false);
@@ -90,6 +101,12 @@ export function IssueView({ issue: initial, projectId }: IssueViewProps) {
             {issue.epic.name}
           </Badge>
         )}
+        <IssueSprintField
+          issue={issue}
+          sprints={sprints}
+          projectId={projectId}
+          onChange={handleSprintChange}
+        />
       </div>
 
       <div className="mb-8 p-4 border border-border rounded-md bg-background">
@@ -101,6 +118,8 @@ export function IssueView({ issue: initial, projectId }: IssueViewProps) {
       </div>
 
       <SubtaskList issueId={issue.id} subtasks={issue.subtasks} />
+
+      <CommentThread issueId={issue.id} initialComments={comments} />
 
       <div className="mt-8 pt-4 border-t border-border flex items-center justify-between text-xs text-muted-foreground">
         <span>Created {new Date(issue.createdAt).toLocaleDateString()}</span>

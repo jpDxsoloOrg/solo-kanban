@@ -31,6 +31,7 @@ export function IssueCard({ issue, onMoveIssue, onSelect }: IssueCardProps) {
   const priority = priorityConfig[issue.priority];
   const completedSubtasks = issue.subtasks.filter((s) => s.completed).length;
   const totalSubtasks = issue.subtasks.length;
+  const commentCount = issue._count?.comments ?? 0;
 
   useEffect(() => {
     const el = ref.current;
@@ -141,6 +142,27 @@ export function IssueCard({ issue, onMoveIssue, onSelect }: IssueCardProps) {
                 }}
               >
                 {issue.epic.name}
+              </span>
+            )}
+
+            {commentCount > 0 && (
+              <span
+                className="ml-auto inline-flex items-center gap-1 text-xs text-muted-foreground"
+                aria-label={`${commentCount} comment${commentCount === 1 ? "" : "s"}`}
+                title={`${commentCount} comment${commentCount === 1 ? "" : "s"}`}
+              >
+                <svg
+                  aria-hidden="true"
+                  viewBox="0 0 16 16"
+                  className="h-3.5 w-3.5"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                  strokeLinejoin="round"
+                >
+                  <path d="M2.5 3.5h11v7h-6l-3 2.5v-2.5h-2z" />
+                </svg>
+                {commentCount}
               </span>
             )}
           </div>

@@ -5,10 +5,22 @@ import { PrismaPg } from "@prisma/adapter-pg";
 const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL });
 const prisma = new PrismaClient({ adapter });
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** Sprint dates are stored as noon UTC on a calendar day (see src/lib/sprint-dates.ts). */
+function dayOffset(days: number): Date {
+  const now = new Date();
+  return new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 12) + days * DAY_MS,
+  );
+}
+
 async function main() {
   // Clean existing data
+  await prisma.comment.deleteMany();
   await prisma.subtask.deleteMany();
   await prisma.issue.deleteMany();
+  await prisma.sprint.deleteMany();
   await prisma.epic.deleteMany();
   await prisma.project.deleteMany();
 
@@ -45,8 +57,44 @@ async function main() {
     },
   });
 
-  // Create issues across all statuses
+  // Sprints: one finished, one in progress, one planned
+  const sprint1 = await prisma.sprint.create({
+    data: {
+      projectId: project.id,
+      number: 1,
+      name: "Sprint 1",
+      goal: "Get the project scaffolded and the data model in place.",
+      status: "COMPLETED",
+      startDate: dayOffset(-21),
+      endDate: dayOffset(-7),
+      completedAt: new Date(Date.now() - 7 * DAY_MS),
+    },
+  });
+
+  const sprint2 = await prisma.sprint.create({
+    data: {
+      projectId: project.id,
+      number: 2,
+      name: "Sprint 2",
+      goal: "Ship a usable board with drag and drop.",
+      status: "ACTIVE",
+      startDate: dayOffset(-6),
+      endDate: dayOffset(8),
+    },
+  });
+
+  const sprint3 = await prisma.sprint.create({
+    data: {
+      projectId: project.id,
+      number: 3,
+      name: "Sprint 3",
+      status: "PLANNED",
+    },
+  });
+
+  // Issues across sprints and statuses. `order` is per (sprint, status) column.
   const issues = [
+    // Sprint 1 (completed): its DONE work lives on in the sprint report
     {
       number: 1,
       title: "Initialize Next.js project",
@@ -55,6 +103,7 @@ async function main() {
       priority: IssuePriority.HIGH,
       order: 0,
       epicId: setupEpic.id,
+      sprintId: sprint1.id,
     },
     {
       number: 2,
@@ -64,7 +113,9 @@ async function main() {
       priority: IssuePriority.HIGH,
       order: 1,
       epicId: setupEpic.id,
+      sprintId: sprint1.id,
     },
+    // Sprint 2 (active): what the board shows
     {
       number: 3,
       title: "Build four-column board layout",
@@ -73,6 +124,7 @@ async function main() {
       priority: IssuePriority.HIGH,
       order: 0,
       epicId: boardEpic.id,
+      sprintId: sprint2.id,
     },
     {
       number: 4,
@@ -82,6 +134,7 @@ async function main() {
       priority: IssuePriority.MEDIUM,
       order: 1,
       epicId: boardEpic.id,
+      sprintId: sprint2.id,
     },
     {
       number: 5,
@@ -91,15 +144,7 @@ async function main() {
       priority: IssuePriority.HIGH,
       order: 0,
       epicId: dndEpic.id,
-    },
-    {
-      number: 6,
-      title: "Add keyboard shortcuts",
-      description: "Arrow keys to navigate, Enter to open detail, M to move between columns.",
-      status: IssueStatus.OPEN,
-      priority: IssuePriority.LOW,
-      order: 1,
-      epicId: null,
+      sprintId: sprint2.id,
     },
     {
       number: 7,
@@ -109,6 +154,49 @@ async function main() {
       priority: IssuePriority.MEDIUM,
       order: 0,
       epicId: setupEpic.id,
+      sprintId: sprint2.id,
+    },
+    {
+      number: 8,
+      title: "Add epic filtering",
+      description: "Filter the board by epic from the sidebar.",
+      status: IssueStatus.DONE,
+      priority: IssuePriority.MEDIUM,
+      order: 0,
+      epicId: boardEpic.id,
+      sprintId: sprint2.id,
+    },
+    // Sprint 3 (planned)
+    {
+      number: 6,
+      title: "Add keyboard shortcuts",
+      description: "Arrow keys to navigate, Enter to open detail, M to move between columns.",
+      status: IssueStatus.OPEN,
+      priority: IssuePriority.LOW,
+      order: 0,
+      epicId: null,
+      sprintId: sprint3.id,
+    },
+    // Backlog (no sprint)
+    {
+      number: 9,
+      title: "Touch-friendly card moves",
+      description: "Native drag and drop doesn't work on most phones; offer another way to move cards.",
+      status: IssueStatus.OPEN,
+      priority: IssuePriority.MEDIUM,
+      order: 0,
+      epicId: dndEpic.id,
+      sprintId: null,
+    },
+    {
+      number: 10,
+      title: "Export sprint report as Markdown",
+      description: null,
+      status: IssueStatus.OPEN,
+      priority: IssuePriority.LOW,
+      order: 1,
+      epicId: null,
+      sprintId: null,
     },
   ];
 
@@ -129,6 +217,29 @@ async function main() {
           { title: "Add overflow scrolling", completed: false, order: 2, issueId: created.id },
           { title: "Test on tablet breakpoint", completed: false, order: 3, issueId: created.id },
         ],
+      });
+
+      const question = await prisma.comment.create({
+        data: {
+          issueId: created.id,
+          body: "Should columns scroll **independently**, or should the whole board scroll?",
+          createdAt: new Date(Date.now() - 2 * DAY_MS),
+        },
+      });
+      await prisma.comment.create({
+        data: {
+          issueId: created.id,
+          parentId: question.id,
+          body: "Independently: the headers stay visible and you can compare columns.",
+          createdAt: new Date(Date.now() - 1 * DAY_MS),
+        },
+      });
+      await prisma.comment.create({
+        data: {
+          issueId: created.id,
+          body: "Grid is in. Remaining work:\n- overflow scrolling\n- tablet check",
+          createdAt: new Date(Date.now() - 3 * 60 * 60 * 1000),
+        },
       });
     }
   }
