@@ -244,6 +244,38 @@ async function main() {
     }
   }
 
+  // A second project, so cross-project views (e.g. the epics overview) have
+  // something to compare.
+  const site = await prisma.project.create({
+    data: { name: "Portfolio Site", description: "Personal site rebuild" },
+  });
+  const contentEpic = await prisma.epic.create({
+    data: { name: "Content", color: "#ec4899", projectId: site.id }, // pink
+  });
+  const deployEpic = await prisma.epic.create({
+    data: { name: "Deploy & Hosting", color: "#0ea5e9", projectId: site.id }, // sky
+  });
+  const siteSprint = await prisma.sprint.create({
+    data: {
+      projectId: site.id,
+      number: 1,
+      name: "Sprint 1",
+      goal: "Launch a first version.",
+      status: "ACTIVE",
+      startDate: dayOffset(-3),
+      endDate: dayOffset(11),
+    },
+  });
+  const siteIssues = [
+    { number: 1, title: "Write the about page", status: IssueStatus.DONE, priority: IssuePriority.MEDIUM, order: 0, epicId: contentEpic.id, sprintId: siteSprint.id },
+    { number: 2, title: "Project case studies", status: IssueStatus.IN_PROGRESS, priority: IssuePriority.HIGH, order: 0, epicId: contentEpic.id, sprintId: siteSprint.id },
+    { number: 3, title: "Set up custom domain", status: IssueStatus.OPEN, priority: IssuePriority.URGENT, order: 0, epicId: deployEpic.id, sprintId: siteSprint.id },
+    { number: 4, title: "Add RSS feed", status: IssueStatus.OPEN, priority: IssuePriority.LOW, order: 0, epicId: contentEpic.id, sprintId: null },
+  ];
+  for (const issue of siteIssues) {
+    await prisma.issue.create({ data: { ...issue, projectId: site.id } });
+  }
+
   console.log("Seed data created successfully.");
 }
 
