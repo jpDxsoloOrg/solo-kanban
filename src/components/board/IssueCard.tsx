@@ -1,30 +1,36 @@
 "use client";
 
 import { useRef, useEffect, useState } from "react";
+import Link from "next/link";
 import { Card, CardContent } from "@dxsolo/ui";
 import type { IssueWithRelations } from "@/types";
 import { IssuePriority, IssueStatus } from "@prisma/client";
 import { draggable, dropTargetForElements } from "@atlaskit/pragmatic-drag-and-drop/element/adapter";
 import { attachClosestEdge, extractClosestEdge } from "@atlaskit/pragmatic-drag-and-drop-hitbox/closest-edge";
 import type { Edge } from "@atlaskit/pragmatic-drag-and-drop-hitbox/closest-edge";
+import { MoveMenu } from "./MoveMenu";
 
 interface IssueCardProps {
   issue: IssueWithRelations;
   onMoveIssue: (issueId: string, newStatus: IssueStatus, newOrder: number) => void;
   onSelect: (issue: IssueWithRelations) => void;
+  /** Move the card to the end of another column (the "Move" menu). */
+  onMoveToStatus?: (issueId: string, status: IssueStatus) => void;
+  /** Disables the "Move" menu's options, e.g. while another move is saving. */
+  moveDisabled?: boolean;
 }
 
 const priorityConfig: Record<
   IssuePriority,
   { label: string; className: string }
 > = {
-  URGENT: { label: "Urgent", className: "bg-red-100 text-red-700" },
-  HIGH: { label: "High", className: "bg-orange-100 text-orange-700" },
-  MEDIUM: { label: "Med", className: "bg-yellow-100 text-yellow-700" },
-  LOW: { label: "Low", className: "bg-gray-100 text-gray-500" },
+  URGENT: { label: "Urgent", className: "bg-red-100 text-red-700 dark:bg-red-500/15 dark:text-red-300" },
+  HIGH: { label: "High", className: "bg-orange-100 text-orange-700 dark:bg-orange-500/15 dark:text-orange-300" },
+  MEDIUM: { label: "Med", className: "bg-yellow-100 text-yellow-700 dark:bg-yellow-500/15 dark:text-yellow-300" },
+  LOW: { label: "Low", className: "bg-gray-100 text-gray-500 dark:bg-gray-500/15 dark:text-gray-300" },
 };
 
-export function IssueCard({ issue, onMoveIssue, onSelect }: IssueCardProps) {
+export function IssueCard({ issue, onMoveIssue, onSelect, onMoveToStatus, moveDisabled }: IssueCardProps) {
   const ref = useRef<HTMLDivElement>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [closestEdge, setClosestEdge] = useState<Edge | null>(null);
@@ -106,25 +112,39 @@ export function IssueCard({ issue, onMoveIssue, onSelect }: IssueCardProps) {
   }, [issue.id, issue.status, issue.order, onMoveIssue]);
 
   return (
-    <div ref={ref} className="relative" onClick={() => onSelect(issue)}>
+    <div
+      ref={ref}
+      data-issue-id={issue.id}
+      className="group relative"
+      onClick={() => onSelect(issue)}
+    >
       {/* Drop indicator: top edge */}
       {closestEdge === "top" && (
         <div className="absolute top-0 left-0 right-0 h-0.5 bg-blue-500 -translate-y-1 rounded-full" />
       )}
 
       <Card
-        className={`cursor-grab hover:ring-2 hover:ring-blue-300 transition-shadow ${
+        className={`cursor-pointer pointer-fine:cursor-grab hover:ring-2 hover:ring-blue-300 dark:hover:ring-blue-500/50 transition-shadow ${
           isDragging ? "opacity-40" : ""
         }`}
       >
         <CardContent className="p-3">
-          {/* Title */}
-          <h3 className={`text-sm font-medium leading-snug ${issue.status === "DONE" ? "line-through text-muted-foreground" : ""}`}>
-            <span className="text-muted-foreground font-normal">#{issue.number}</span>{" "}
-            {issue.title}
+          {/* Title: a real link so keyboard users can open the issue. It is
+              not draggable itself, so dragging still picks up the card. */}
+          <h3 className={`text-sm font-medium leading-snug wrap-anywhere ${issue.status === "DONE" ? "line-through text-muted-foreground" : ""}`}>
+            <Link
+              href={`/projects/${issue.projectId}/issues/${issue.number}`}
+              prefetch={false}
+              draggable={false}
+              onClick={(e) => e.stopPropagation()}
+              className="rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              <span className="text-muted-foreground font-normal">#{issue.number}</span>{" "}
+              {issue.title}
+            </Link>
           </h3>
 
-          {/* Meta row: priority + epic label */}
+          {/* Meta row: priority + epic label, comments, move */}
           <div className="flex items-center gap-2 mt-2 flex-wrap">
             <span
               className={`text-xs font-medium px-1.5 py-0.5 rounded ${priority.className}`}
@@ -135,7 +155,7 @@ export function IssueCard({ issue, onMoveIssue, onSelect }: IssueCardProps) {
             {/* Epic label: hidden when container is too narrow */}
             {issue.epic && (
               <span
-                className="text-xs px-1.5 py-0.5 rounded hidden @[200px]:inline-block"
+                className="text-xs px-1.5 py-0.5 rounded hidden @[200px]:inline-block max-w-full truncate"
                 style={{
                   backgroundColor: `${issue.epic.color}20`,
                   color: issue.epic.color,
@@ -145,26 +165,41 @@ export function IssueCard({ issue, onMoveIssue, onSelect }: IssueCardProps) {
               </span>
             )}
 
-            {commentCount > 0 && (
-              <span
-                className="ml-auto inline-flex items-center gap-1 text-xs text-muted-foreground"
-                aria-label={`${commentCount} comment${commentCount === 1 ? "" : "s"}`}
-                title={`${commentCount} comment${commentCount === 1 ? "" : "s"}`}
-              >
-                <svg
-                  aria-hidden="true"
-                  viewBox="0 0 16 16"
-                  className="h-3.5 w-3.5"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.5"
-                  strokeLinejoin="round"
+            <span className="ml-auto flex items-center gap-2">
+              {commentCount > 0 && (
+                <span
+                  className="inline-flex items-center gap-1 text-xs text-muted-foreground"
+                  aria-label={`${commentCount} comment${commentCount === 1 ? "" : "s"}`}
+                  title={`${commentCount} comment${commentCount === 1 ? "" : "s"}`}
                 >
-                  <path d="M2.5 3.5h11v7h-6l-3 2.5v-2.5h-2z" />
-                </svg>
-                {commentCount}
-              </span>
-            )}
+                  <svg
+                    aria-hidden="true"
+                    viewBox="0 0 16 16"
+                    className="h-3.5 w-3.5"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.5"
+                    strokeLinejoin="round"
+                  >
+                    <path d="M2.5 3.5h11v7h-6l-3 2.5v-2.5h-2z" />
+                  </svg>
+                  {commentCount}
+                </span>
+              )}
+
+              {onMoveToStatus && (
+                <MoveMenu
+                  issueId={issue.id}
+                  issueNumber={issue.number}
+                  currentStatus={issue.status}
+                  onMove={(status) => onMoveToStatus(issue.id, status)}
+                  disabled={moveDisabled}
+                  // Where hover exists the button is only revealed on hover,
+                  // so overlay it on the card corner instead of taking space.
+                  className="[@media(hover:hover)]:absolute [@media(hover:hover)]:top-2 [@media(hover:hover)]:right-2 [@media(hover:hover)]:shadow-sm"
+                />
+              )}
+            </span>
           </div>
 
           {/* Subtask progress */}
