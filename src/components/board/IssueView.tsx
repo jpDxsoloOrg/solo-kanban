@@ -5,20 +5,15 @@ import Link from "next/link";
 import { Button, Badge } from "@dxsolo/ui";
 import type { CommentWithReplies, IssueWithRelations, SprintWithCounts } from "@/types";
 import type { Sprint } from "@prisma/client";
-import { IssueStatus, IssuePriority } from "@prisma/client";
+import { IssuePriority } from "@prisma/client";
 import { IssueDetailModal } from "./IssueDetailModal";
 import { MarkdownPreview } from "./MarkdownPreview";
 import { SubtaskList } from "./SubtaskList";
+import { LocalDate } from "./LocalDate";
+import { STATUS_LABELS } from "./columns";
 import { getIssue } from "@/actions/get-issue";
 import { IssueSprintField } from "@/components/sprints/IssueSprintField";
 import { CommentThread } from "@/components/comments/CommentThread";
-
-const statusLabel: Record<IssueStatus, string> = {
-  OPEN: "Open",
-  IN_PROGRESS: "In Progress",
-  REVIEW: "Review",
-  DONE: "Done",
-};
 
 const priorityLabel: Record<IssuePriority, string> = {
   URGENT: "Urgent",
@@ -28,10 +23,10 @@ const priorityLabel: Record<IssuePriority, string> = {
 };
 
 const priorityClass: Record<IssuePriority, string> = {
-  URGENT: "bg-red-100 text-red-700",
-  HIGH: "bg-orange-100 text-orange-700",
-  MEDIUM: "bg-yellow-100 text-yellow-700",
-  LOW: "bg-gray-100 text-gray-500",
+  URGENT: "bg-red-100 text-red-700 dark:bg-red-500/15 dark:text-red-300",
+  HIGH: "bg-orange-100 text-orange-700 dark:bg-orange-500/15 dark:text-orange-300",
+  MEDIUM: "bg-yellow-100 text-yellow-700 dark:bg-yellow-500/15 dark:text-yellow-300",
+  LOW: "bg-gray-100 text-gray-500 dark:bg-gray-500/15 dark:text-gray-300",
 };
 
 interface IssueViewProps {
@@ -46,6 +41,9 @@ interface IssueViewProps {
 export function IssueView({ issue: initial, projectId, comments, sprints }: IssueViewProps) {
   const [issue, setIssue] = useState(initial);
   const [editing, setEditing] = useState(false);
+  // Bumped after the edit modal closes so the page's subtask list picks up
+  // subtasks added or toggled inside the modal.
+  const [subtasksVersion, setSubtasksVersion] = useState(0);
 
   const handleSprintChange = (sprint: Sprint | null) => {
     setIssue((prev) => ({ ...prev, sprintId: sprint?.id ?? null, sprint }));
@@ -55,7 +53,10 @@ export function IssueView({ issue: initial, projectId, comments, sprints }: Issu
     setEditing(false);
     try {
       const fresh = await getIssue(issue.id);
-      if (fresh) setIssue(fresh);
+      if (fresh) {
+        setIssue(fresh);
+        setSubtasksVersion((v) => v + 1);
+      }
     } catch (error) {
       console.error("Failed to refresh issue:", error);
     }
@@ -63,28 +64,28 @@ export function IssueView({ issue: initial, projectId, comments, sprints }: Issu
 
   return (
     <div className="h-full overflow-y-auto">
-      <div className="max-w-3xl mx-auto p-6">
-      <div className="mb-4">
+      <div className="mx-auto max-w-3xl px-4 py-4 sm:p-6">
+      <div className="mb-3 sm:mb-4">
         <Link
           href={`/projects/${projectId}/board`}
-          className="text-sm text-muted-foreground hover:underline"
+          className="-mx-1 inline-flex min-h-9 items-center rounded px-1 text-sm text-muted-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
           ← Back to board
         </Link>
       </div>
 
-      <div className="flex items-start justify-between gap-4 mb-4">
-        <h1 className="text-2xl font-semibold leading-tight">
+      <div className="mb-4 flex items-start justify-between gap-3 sm:gap-4">
+        <h1 className="min-w-0 text-xl font-semibold leading-tight wrap-anywhere sm:text-2xl">
           <span className="text-muted-foreground font-normal">#{issue.number}</span>{" "}
           {issue.title}
         </h1>
-        <Button intent="secondary" onClick={() => setEditing(true)}>
+        <Button intent="secondary" className="shrink-0" onClick={() => setEditing(true)}>
           Edit
         </Button>
       </div>
 
-      <div className="flex items-center gap-2 flex-wrap mb-6">
-        <Badge intent="default">{statusLabel[issue.status]}</Badge>
+      <div className="mb-6 flex min-w-0 flex-wrap items-center gap-2">
+        <Badge intent="default">{STATUS_LABELS[issue.status]}</Badge>
         <span
           className={`text-xs font-medium px-2 py-0.5 rounded ${priorityClass[issue.priority]}`}
         >
@@ -93,12 +94,14 @@ export function IssueView({ issue: initial, projectId, comments, sprints }: Issu
         {issue.epic && (
           <Badge
             intent="primary"
+            className="min-w-0 max-w-full"
+            title={issue.epic.name}
             style={{
               backgroundColor: `${issue.epic.color}20`,
               color: issue.epic.color,
             }}
           >
-            {issue.epic.name}
+            <span className="min-w-0 truncate">{issue.epic.name}</span>
           </Badge>
         )}
         <IssueSprintField
@@ -109,7 +112,7 @@ export function IssueView({ issue: initial, projectId, comments, sprints }: Issu
         />
       </div>
 
-      <div className="mb-8 p-4 border border-border rounded-md bg-background">
+      <div className="mb-8 rounded-md border border-border bg-background p-3 sm:p-4">
         {issue.description ? (
           <MarkdownPreview content={issue.description} />
         ) : (
@@ -117,13 +120,17 @@ export function IssueView({ issue: initial, projectId, comments, sprints }: Issu
         )}
       </div>
 
-      <SubtaskList issueId={issue.id} subtasks={issue.subtasks} />
+      <SubtaskList key={subtasksVersion} issueId={issue.id} subtasks={issue.subtasks} />
 
       <CommentThread issueId={issue.id} initialComments={comments} />
 
-      <div className="mt-8 pt-4 border-t border-border flex items-center justify-between text-xs text-muted-foreground">
-        <span>Created {new Date(issue.createdAt).toLocaleDateString()}</span>
-        <span>Updated {new Date(issue.updatedAt).toLocaleDateString()}</span>
+      <div className="mt-8 flex flex-wrap items-center justify-between gap-x-4 gap-y-1 border-t border-border pt-4 text-xs text-muted-foreground">
+        <span>
+          Created <LocalDate date={issue.createdAt} />
+        </span>
+        <span>
+          Updated <LocalDate date={issue.updatedAt} />
+        </span>
       </div>
 
       {editing && (

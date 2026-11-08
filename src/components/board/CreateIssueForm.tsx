@@ -27,6 +27,7 @@ export function CreateIssueForm({
   const [title, setTitle] = useState("");
   const [epicId, setEpicId] = useState("");
   const [isCreating, setIsCreating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -38,6 +39,7 @@ export function CreateIssueForm({
     if (!trimmed) return;
 
     setIsCreating(true);
+    setError(null);
     try {
       const issue = await createIssue({
         projectId,
@@ -51,6 +53,7 @@ export function CreateIssueForm({
       setEpicId("");
     } catch (error) {
       console.error("Failed to create issue:", error);
+      setError("Couldn't create the issue. Please try again.");
     } finally {
       setIsCreating(false);
     }
@@ -74,12 +77,14 @@ export function CreateIssueForm({
         onChange={(e) => setTitle(e.target.value)}
         onKeyDown={handleKeyDown}
         placeholder="Issue title..."
+        aria-label="New issue title"
         disabled={isCreating}
       />
       {epics.length > 0 && (
         <Select
           value={epicId}
           onChange={(e) => setEpicId(e.target.value)}
+          aria-label="Epic"
           disabled={isCreating}
         >
           <option value="">No epic</option>
@@ -90,13 +95,19 @@ export function CreateIssueForm({
           ))}
         </Select>
       )}
+      {error && (
+        <p role="alert" className="text-xs text-destructive">
+          {error}
+        </p>
+      )}
       <div className="flex justify-end gap-2">
-        <Button intent="ghost" size="sm" onClick={onCancel} disabled={isCreating}>
+        <Button intent="ghost" size="sm" className="h-9 pointer-fine:h-8" onClick={onCancel} disabled={isCreating}>
           Cancel
         </Button>
         <Button
           intent="primary"
           size="sm"
+          className="h-9 pointer-fine:h-8"
           onClick={handleSubmit}
           disabled={isCreating || !title.trim()}
         >

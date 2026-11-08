@@ -14,7 +14,7 @@ export default async function Home() {
   }
 
   return (
-    <main className="flex items-center justify-center h-screen">
+    <main className="flex min-h-dvh items-center justify-center px-4 pt-[max(1rem,env(safe-area-inset-top))] pb-[max(1rem,env(safe-area-inset-bottom))]">
       <CreateFirstProject />
     </main>
   );
