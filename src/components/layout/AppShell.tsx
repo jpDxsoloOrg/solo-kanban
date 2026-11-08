@@ -4,6 +4,7 @@ import { isValidElement, ReactNode, useEffect, useRef, useState } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
 import { LiveRefresh } from "@/components/live/LiveRefresh";
 import { LiveIndicator } from "@/components/live/LiveUpdatesControl";
+import { OfflineBanner } from "@/components/pwa/OfflineBanner";
 import { AppIcon } from "./AppIcon";
 import { setSidebarCollapsed, useSidebarCollapsed } from "./sidebar-state";
 
@@ -263,14 +264,19 @@ export function AppShell({ sidebar, children, title }: AppShellProps) {
         </div>
       </aside>
 
-      <main
-        id="main-content"
-        tabIndex={-1}
-        inert={drawerOpen}
-        className="min-h-0 min-w-0 flex-1 overflow-y-auto pb-[env(safe-area-inset-bottom)] focus:outline-none"
-      >
-        {children}
-      </main>
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+        {/* Offline / saved-copy notice; refreshes the page on reconnect. */}
+        <OfflineBanner />
+
+        <main
+          id="main-content"
+          tabIndex={-1}
+          inert={drawerOpen}
+          className="min-h-0 min-w-0 flex-1 overflow-y-auto pb-[env(safe-area-inset-bottom)] focus:outline-none"
+        >
+          {children}
+        </main>
+      </div>
 
       {/* Keeps every page in sync with changes made in other tabs/devices. */}
       <LiveRefresh />
