@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Button, Input, Card, CardContent } from "@dxsolo/ui";
 import { createProject } from "@/actions/project-actions";
+import { todayInputValue } from "@/lib/sprint-dates";
 import { isNavigationError } from "./navigation-error";
 
 export function CreateFirstProject() {
@@ -17,7 +18,8 @@ export function CreateFirstProject() {
     setIsCreating(true);
     setError(null);
     try {
-      await createProject(trimmed);
+      // The browser's date, so Sprint 1 starts on the user's day.
+      await createProject(trimmed, undefined, todayInputValue());
     } catch (error) {
       // createProject redirects to the new board on success.
       if (isNavigationError(error)) return;

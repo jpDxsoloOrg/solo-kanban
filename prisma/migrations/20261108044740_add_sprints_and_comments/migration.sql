@@ -1,3 +1,8 @@
+-- Run the whole migration as one transaction: if any statement fails, nothing
+-- is left behind, and after `prisma migrate resolve --rolled-back` the next
+-- deploy can simply apply it again. (Prisma doesn't wrap migrations itself.)
+BEGIN;
+
 -- CreateEnum
 CREATE TYPE "SprintStatus" AS ENUM ('PLANNED', 'ACTIVE', 'COMPLETED');
 
@@ -65,10 +70,14 @@ ALTER TABLE "Comment" ADD CONSTRAINT "Comment_parentId_fkey" FOREIGN KEY ("paren
 -- Data migration: give every existing project an active "Sprint 1" that holds
 -- all of its current issues, so the board looks exactly as it did before the
 -- upgrade. Completing that sprint is what clears out the DONE column.
+-- Sprint dates are calendar dates stored at 12:00 UTC (src/lib/sprint-dates.ts):
+-- it starts on the deploy's UTC day and, like a new project's Sprint 1, ends
+-- 14 days later.
 -- ---------------------------------------------------------------------------
-INSERT INTO "Sprint" ("id", "number", "name", "status", "startDate", "createdAt", "updatedAt", "projectId")
-SELECT gen_random_uuid()::text, 1, 'Sprint 1', 'ACTIVE', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, p."id"
-FROM "Project" p;
+INSERT INTO "Sprint" ("id", "number", "name", "status", "startDate", "endDate", "createdAt", "updatedAt", "projectId")
+SELECT gen_random_uuid()::text, 1, 'Sprint 1', 'ACTIVE', d.start, d.start + interval '14 days', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, p."id"
+FROM "Project" p
+CROSS JOIN (SELECT date_trunc('day', now() AT TIME ZONE 'UTC') + interval '12 hours' AS start) d;
 
 UPDATE "Issue" i
 SET "sprintId" = s."id"
@@ -89,3 +98,5 @@ FROM (
   FROM "Issue"
 ) sub
 WHERE i."id" = sub."id";
+
+COMMIT;
