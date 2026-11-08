@@ -9,7 +9,7 @@ import { IssuePriority } from "@prisma/client";
 import { IssueDetailModal } from "./IssueDetailModal";
 import { MarkdownPreview } from "./MarkdownPreview";
 import { SubtaskList } from "./SubtaskList";
-import { LocalDate } from "./LocalDate";
+import { LocalDate } from "@/components/common/LocalDate";
 import { STATUS_LABELS } from "./columns";
 import { getIssue } from "@/actions/get-issue";
 import { IssueSprintField } from "@/components/sprints/IssueSprintField";

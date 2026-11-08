@@ -2,7 +2,7 @@ import Link from "next/link";
 import type { Sprint } from "@prisma/client";
 import { formatSprintRange } from "@/lib/sprint-dates";
 import { DaysLeft } from "./DaysLeft";
-import { LocalDate } from "./LocalDate";
+import { LocalDate } from "@/components/common/LocalDate";
 import { ProgressBar } from "./ProgressBar";
 import { chipClass, focusRingClass, pluralize, sprintStatusClass, sprintStatusLabel } from "./sprint-ui";
 
@@ -39,7 +39,7 @@ export function SprintCard({ sprint, projectId, totalIssues, doneIssues }: Sprin
           <>
             <span aria-hidden="true">·</span>
             <span>
-              Completed <LocalDate value={sprint.completedAt} />
+              Completed <LocalDate date={sprint.completedAt} />
             </span>
           </>
         )}

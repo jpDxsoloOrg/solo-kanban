@@ -3,7 +3,7 @@ import type { IssuePriority, Sprint } from "@prisma/client";
 import { daysRemaining, formatSprintRangeWithYear, toDateInputValue } from "@/lib/sprint-dates";
 import { DaysLeft } from "./DaysLeft";
 import { IssueRow, type IssueRowIssue } from "./IssueRow";
-import { LocalDate } from "./LocalDate";
+import { LocalDate } from "@/components/common/LocalDate";
 import { ProgressBar } from "./ProgressBar";
 import {
   chipClass,
@@ -95,7 +95,7 @@ export function SprintReport({ sprint, projectId, issues }: SprintReportProps) {
                     {/* On phones the completion date gets its own line. */}
                     <span aria-hidden="true" className="hidden sm:inline">·</span>
                     <span className="basis-full whitespace-nowrap sm:basis-auto">
-                      Completed <LocalDate value={sprint.completedAt} />
+                      Completed <LocalDate date={sprint.completedAt} />
                     </span>
                   </>
                 )}

@@ -7,19 +7,11 @@ import type { Sprint } from "@prisma/client";
 import {
   completeSprint,
   getNextSprintNumber,
-  updateSprint,
   type CompleteSprintSummary,
   type IncompleteIssueTarget,
 } from "@/actions/sprint-actions";
 import type { SprintWithCounts } from "@/types";
-import {
-  addDaysToInputValue,
-  DEFAULT_SPRINT_LENGTH_DAYS,
-  formatSprintRange,
-  todayInputValue,
-  toDateInputValue,
-  utcToday,
-} from "@/lib/sprint-dates";
+import { formatSprintRange, todayInputValue } from "@/lib/sprint-dates";
 import { dialogClass, pluralize } from "./sprint-ui";
 
 export interface CompleteSprintDialogProps {
@@ -116,15 +108,17 @@ function CompleteSprintForm({
     setError(null);
     onBusyChange(true);
     startTransition(async () => {
-      const result = await completeSprint(sprint.id, { moveIncompleteTo: target, startNext });
+      // Send the browser's date so a sprint started here begins on the
+      // user's calendar day, not the server's UTC day.
+      const result = await completeSprint(sprint.id, {
+        moveIncompleteTo: target,
+        startNext,
+        today: todayInputValue(),
+      });
       if (!result.ok) {
         onBusyChange(false);
         setError(result.error);
         return;
-      }
-
-      if (result.data.nextSprintStarted && result.data.nextSprintId) {
-        await alignDefaultedDates(result.data.nextSprintId, target, plannedSprints);
       }
 
       // Refresh and close in one transition: the dialog keeps its pending
@@ -238,36 +232,4 @@ function CompleteSprintForm({
       </div>
     </form>
   );
-}
-
-/**
- * When `completeSprint` starts the next sprint without planned dates, the
- * server defaults the start to *its* (UTC) today, which can be a day off from
- * the user's calendar. Re-date it to the browser's today. Best effort: the
- * sprint is already running, so a failure here is only logged.
- */
-async function alignDefaultedDates(
-  nextSprintId: string,
-  target: IncompleteIssueTarget,
-  plannedSprints: SprintWithCounts[],
-) {
-  const today = todayInputValue();
-  const serverToday = toDateInputValue(utcToday());
-  if (today === serverToday) return;
-
-  const planned = plannedSprints.find((s) => s.id === target);
-  if (planned?.startDate) return; // The user planned this start date.
-
-  const plannedEnd = toDateInputValue(planned?.endDate);
-  if (plannedEnd && plannedEnd < today) return;
-
-  try {
-    const result = await updateSprint(nextSprintId, {
-      startDate: today,
-      ...(!plannedEnd && { endDate: addDaysToInputValue(today, DEFAULT_SPRINT_LENGTH_DAYS) }),
-    });
-    if (!result.ok) console.error("Failed to align sprint dates:", result.error);
-  } catch (error) {
-    console.error("Failed to align sprint dates:", error);
-  }
 }

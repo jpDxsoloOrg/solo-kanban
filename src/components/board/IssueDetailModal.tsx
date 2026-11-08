@@ -17,7 +17,7 @@ import { IssueStatus, IssuePriority } from "@prisma/client";
 import { updateIssue } from "@/actions/update-issue";
 import { MarkdownPreview } from "./MarkdownPreview";
 import { SubtaskList } from "./SubtaskList";
-import { LocalDate } from "./LocalDate";
+import { LocalDate } from "@/components/common/LocalDate";
 
 interface IssueDetailModalProps {
   issue: IssueWithRelations;

@@ -36,6 +36,12 @@ export interface CompleteSprintOptions {
   moveIncompleteTo: IncompleteIssueTarget;
   /** Start the sprint the unfinished issues went to (ignored for "backlog"). */
   startNext?: boolean;
+  /**
+   * The user's calendar date ("YYYY-MM-DD", browser time zone). Used as the
+   * start date when the next sprint is started without one planned, so it
+   * isn't off by a day from the server's UTC date. Defaults to UTC today.
+   */
+  today?: string;
 }
 
 export interface CompleteSprintSummary {
@@ -305,7 +311,7 @@ export async function completeSprint(
       let nextSprintStarted = false;
       if (nextSprint && options.startNext) {
         const startDate =
-          nextSprint.startDate ?? utcToday();
+          nextSprint.startDate ?? fromDateInputValue(options.today) ?? utcToday();
         const endDate = nextSprint.endDate ?? addDays(startDate, DEFAULT_SPRINT_LENGTH_DAYS);
         await tx.sprint.update({
           where: { id: nextSprint.id },
