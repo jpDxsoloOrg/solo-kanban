@@ -1,37 +1,70 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useMemo } from "react";
 import type { Subtask } from "@prisma/client";
 import { toggleSubtask, addSubtask, deleteSubtask } from "@/actions/subtask-actions";
 import { Button, Checkbox, Input } from "@dxsolo/ui";
+import { holdLiveRefresh } from "@/components/live/live-refresh-hold";
+import { useServerState } from "@/components/live/useServerState";
 
 interface SubtaskListProps {
   issueId: string;
   subtasks: Subtask[];
 }
 
-export function SubtaskList({ issueId, subtasks: initialSubtasks }: SubtaskListProps) {
-  const [subtasks, setSubtasks] = useState(initialSubtasks.sort((a, b) => a.order - b.order));
+export function SubtaskList({ issueId, subtasks: serverSubtasks }: SubtaskListProps) {
+  const sortedServerSubtasks = useMemo(
+    () => [...serverSubtasks].sort((a, b) => a.order - b.order),
+    [serverSubtasks]
+  );
+  // Number of add/toggle/delete requests still saving.
+  const [saving, setSaving] = useState(0);
+  // Follows refreshed server data (live updates from other tabs/devices),
+  // except while one of this list's own changes is saving.
+  const [subtasks, setSubtasks, skipPendingServerSubtasks] = useServerState(
+    sortedServerSubtasks,
+    saving > 0
+  );
   const [newTitle, setNewTitle] = useState("");
   const [isAdding, setIsAdding] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const completed = subtasks.filter((s) => s.completed).length;
+
+  /**
+   * Runs one of this list's saves. Until it's done, live refreshes wait and
+   * server data that arrives anyway is set aside: it may predate the save.
+   */
+  const trackSave = async <T,>(request: () => Promise<T>): Promise<T> => {
+    setSaving((n) => n + 1);
+    const releaseLiveRefresh = holdLiveRefresh();
+    try {
+      const result = await request();
+      skipPendingServerSubtasks();
+      return result;
+    } finally {
+      setSaving((n) => n - 1);
+      releaseLiveRefresh();
+    }
+  };
 
   const handleToggle = async (subtaskId: string, checked: boolean) => {
     // Optimistic update
     setSubtasks((prev) =>
       prev.map((s) => (s.id === subtaskId ? { ...s, completed: checked } : s))
     );
+    setError(null);
 
     try {
-      await toggleSubtask(subtaskId, checked);
-    } catch (error) {
-      console.error("Failed to toggle subtask:", error);
+      await trackSave(() => toggleSubtask(subtaskId, checked));
+    } catch (err) {
+      console.error("Failed to toggle subtask:", err);
       // Rollback
       setSubtasks((prev) =>
         prev.map((s) => (s.id === subtaskId ? { ...s, completed: !checked } : s))
       );
+      setError("Couldn't update the subtask. Please try again.");
     }
   };
 
@@ -40,13 +73,15 @@ export function SubtaskList({ issueId, subtasks: initialSubtasks }: SubtaskListP
     if (!trimmed) return;
 
     setIsAdding(true);
+    setError(null);
     try {
-      const created = await addSubtask(issueId, trimmed, subtasks.length);
-      setSubtasks((prev) => [...prev, created]);
+      const created = await trackSave(() => addSubtask(issueId, trimmed, subtasks.length));
+      setSubtasks((prev) => (prev.some((s) => s.id === created.id) ? prev : [...prev, created]));
       setNewTitle("");
       inputRef.current?.focus();
-    } catch (error) {
-      console.error("Failed to add subtask:", error);
+    } catch (err) {
+      console.error("Failed to add subtask:", err);
+      setError("Couldn't add the subtask. Please try again.");
     } finally {
       setIsAdding(false);
     }
@@ -55,12 +90,14 @@ export function SubtaskList({ issueId, subtasks: initialSubtasks }: SubtaskListP
   const handleDelete = async (subtaskId: string) => {
     const previous = subtasks;
     setSubtasks((prev) => prev.filter((s) => s.id !== subtaskId));
+    setError(null);
 
     try {
-      await deleteSubtask(subtaskId);
-    } catch (error) {
-      console.error("Failed to delete subtask:", error);
+      await trackSave(() => deleteSubtask(subtaskId));
+    } catch (err) {
+      console.error("Failed to delete subtask:", err);
       setSubtasks(previous);
+      setError("Couldn't delete the subtask. Please try again.");
     }
   };
 
@@ -98,18 +135,20 @@ export function SubtaskList({ issueId, subtasks: initialSubtasks }: SubtaskListP
         {subtasks.map((subtask) => (
           <div
             key={subtask.id}
-            className="flex items-center gap-2 group py-1 px-2 rounded hover:bg-muted"
+            className="group -mx-2 flex min-h-10 items-center gap-2 rounded px-2 py-1 hover:bg-muted pointer-fine:min-h-8"
           >
-            <Checkbox
-              checked={subtask.completed}
-              onChange={(e) => handleToggle(subtask.id, e.target.checked)}
-              label={subtask.title}
-              className={subtask.completed ? "opacity-50" : ""}
-            />
-            <span className="flex-1" />
+            <div className="min-w-0 flex-1 wrap-anywhere">
+              <Checkbox
+                checked={subtask.completed}
+                onChange={(e) => handleToggle(subtask.id, e.target.checked)}
+                label={subtask.title}
+                className={`shrink-0 ${subtask.completed ? "opacity-50" : ""}`}
+              />
+            </div>
             <button
+              type="button"
               onClick={() => handleDelete(subtask.id)}
-              className="text-muted-foreground hover:text-destructive opacity-0 group-hover:opacity-100 transition-opacity text-xs"
+              className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded text-xs text-muted-foreground transition-opacity hover:text-destructive focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring pointer-fine:h-7 pointer-fine:w-7 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100"
               aria-label={`Delete subtask: ${subtask.title}`}
             >
               ✕
@@ -118,23 +157,32 @@ export function SubtaskList({ issueId, subtasks: initialSubtasks }: SubtaskListP
         ))}
       </div>
 
+      {error && (
+        <p role="alert" className="mt-2 text-sm text-destructive">
+          {error}
+        </p>
+      )}
+
       {/* Add subtask input */}
       <div className="flex items-center gap-2 mt-2">
-        <Input
-          ref={inputRef}
-          value={newTitle}
-          onChange={(e) => setNewTitle(e.target.value)}
-          onKeyDown={handleKeyDown}
-          placeholder="Add a subtask..."
-          disabled={isAdding}
-        />
+        <div className="min-w-0 flex-1">
+          <Input
+            ref={inputRef}
+            value={newTitle}
+            onChange={(e) => setNewTitle(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder="Add a subtask..."
+            aria-label="New subtask"
+            disabled={isAdding}
+          />
+        </div>
         <Button
           intent="secondary"
-          size="sm"
+          className="shrink-0"
           onClick={handleAdd}
           disabled={isAdding || !newTitle.trim()}
         >
-          Add
+          {isAdding ? "Adding..." : "Add"}
         </Button>
       </div>
     </div>

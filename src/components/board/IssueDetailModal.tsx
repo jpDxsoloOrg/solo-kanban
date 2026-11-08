@@ -17,6 +17,8 @@ import { IssueStatus, IssuePriority } from "@prisma/client";
 import { updateIssue } from "@/actions/update-issue";
 import { MarkdownPreview } from "./MarkdownPreview";
 import { SubtaskList } from "./SubtaskList";
+import { LocalDate } from "@/components/common/LocalDate";
+import { useSavedCopyAt } from "@/components/pwa/saved-copy";
 
 interface IssueDetailModalProps {
   issue: IssueWithRelations;
@@ -31,6 +33,13 @@ const statusOptions: { value: IssueStatus; label: string }[] = [
   { value: "DONE", label: "Done" },
 ];
 
+interface EditableFields {
+  title: string;
+  description: string;
+  status: IssueStatus;
+  priority: IssuePriority;
+}
+
 const priorityOptions: { value: IssuePriority; label: string }[] = [
   { value: "URGENT", label: "Urgent" },
   { value: "HIGH", label: "High" },
@@ -38,55 +47,111 @@ const priorityOptions: { value: IssuePriority; label: string }[] = [
   { value: "LOW", label: "Low" },
 ];
 
-const priorityBadgeIntent: Record<IssuePriority, "danger" | "warning" | "info" | "default"> = {
-  URGENT: "danger",
-  HIGH: "warning",
-  MEDIUM: "info",
-  LOW: "default",
-};
-
 export function IssueDetailModal({ issue, onClose, onUpdate }: IssueDetailModalProps) {
   const [title, setTitle] = useState(issue.title);
   const [description, setDescription] = useState(issue.description ?? "");
   const [status, setStatus] = useState(issue.status);
   const [priority, setPriority] = useState(issue.priority);
   const [isSaving, setIsSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  // Closing was stopped by a failed save: offer to close without saving.
+  const [closeFailed, setCloseFailed] = useState(false);
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  // Fields edited since the last save. Merged, so quick successive edits
+  // (a title, then the priority) are all saved, not just the last one.
+  const unsavedFieldsRef = useRef<Partial<EditableFields>>({});
+  // Saves still waiting for the server; closing waits for them.
+  const inFlightRef = useRef(new Set<Promise<boolean>>());
+  const closingRef = useRef(false);
+  // A saved copy (served offline by the service worker) shows old data:
+  // saving its fields would overwrite newer changes made elsewhere.
+  const isSavedCopy = useSavedCopyAt() !== null;
 
-  // Track latest values for flush-on-unmount
-  const latestFieldsRef = useRef({ title, description, status, priority });
-  useEffect(() => {
-    latestFieldsRef.current = { title, description, status, priority };
-  }, [title, description, status, priority]);
+  /**
+   * Save the unsaved fields now (cancelling the debounce timer). Resolves
+   * false if the save failed; the fields are then kept for a retry.
+   */
+  const save = useCallback(async (): Promise<boolean> => {
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current);
+      saveTimeoutRef.current = null;
+    }
+    const fields = unsavedFieldsRef.current;
+    if (Object.keys(fields).length === 0) return true;
+    unsavedFieldsRef.current = {};
+    if (isSavedCopy) return true;
+
+    setIsSaving(true);
+    const request = (async () => {
+      try {
+        const updated = await updateIssue(issue.id, fields);
+        onUpdate({ ...issue, ...updated });
+        setSaveError(null);
+        setCloseFailed(false);
+        return true;
+      } catch (error) {
+        console.error("Failed to save:", error);
+        // Retry these with the next edit (or Done); newer values win.
+        unsavedFieldsRef.current = { ...fields, ...unsavedFieldsRef.current };
+        setSaveError("Couldn't save your changes. Keep editing or press Done to retry.");
+        return false;
+      } finally {
+        setIsSaving(false);
+      }
+    })();
+    inFlightRef.current.add(request);
+    try {
+      return await request;
+    } finally {
+      inFlightRef.current.delete(request);
+    }
+  }, [issue, onUpdate, isSavedCopy]);
 
   // Auto-save with debounce
   const debouncedSave = useCallback(
-    (fields: Partial<{ title: string; description: string; status: IssueStatus; priority: IssuePriority }>) => {
+    (fields: Partial<EditableFields>) => {
+      if (isSavedCopy) return;
+      unsavedFieldsRef.current = { ...unsavedFieldsRef.current, ...fields };
       if (saveTimeoutRef.current) {
         clearTimeout(saveTimeoutRef.current);
       }
-
-      saveTimeoutRef.current = setTimeout(async () => {
-        setIsSaving(true);
-        try {
-          const updated = await updateIssue(issue.id, fields);
-          onUpdate({ ...issue, ...updated });
-        } catch (error) {
-          console.error("Failed to save:", error);
-        } finally {
-          setIsSaving(false);
-        }
+      saveTimeoutRef.current = setTimeout(() => {
+        saveTimeoutRef.current = null;
+        void save();
       }, 500);
     },
-    [issue, onUpdate]
+    [save, isSavedCopy]
   );
 
-  // Flush pending save on unmount
+  // Closing saves right away, before the page re-reads the issue. If that
+  // fails the modal stays open with the error, so nothing typed is lost.
+  const handleClose = async () => {
+    if (closingRef.current) return;
+    closingRef.current = true;
+    try {
+      // A save that's already running may fail and hand its fields back.
+      while (inFlightRef.current.size > 0) await Promise.all(inFlightRef.current);
+      if (await save()) onClose();
+      else setCloseFailed(true);
+    } finally {
+      closingRef.current = false;
+    }
+  };
+
+  const handleDiscard = () => {
+    if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+    saveTimeoutRef.current = null;
+    unsavedFieldsRef.current = {};
+    onClose();
+  };
+
+  // Flush a pending save if the modal goes away some other way (navigation).
   useEffect(() => {
     return () => {
-      if (saveTimeoutRef.current) {
-        clearTimeout(saveTimeoutRef.current);
-        const fields = latestFieldsRef.current;
+      if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+      const fields = unsavedFieldsRef.current;
+      if (Object.keys(fields).length > 0) {
+        unsavedFieldsRef.current = {};
         updateIssue(issue.id, fields).catch(console.error);
       }
     };
@@ -113,24 +178,47 @@ export function IssueDetailModal({ issue, onClose, onUpdate }: IssueDetailModalP
   };
 
   return (
-    <Modal open onClose={onClose} title="" className="max-w-2xl">
-      <div className="flex flex-col gap-6">
+    <Modal open onClose={handleClose} title={`Edit #${issue.number}`} className="max-w-2xl">
+      {/* Close button: phones have little backdrop left to tap */}
+      <button
+        type="button"
+        onClick={handleClose}
+        aria-label="Close"
+        className="absolute top-3 right-3 inline-flex h-10 w-10 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:top-4 sm:right-4 pointer-fine:h-8 pointer-fine:w-8"
+      >
+        <svg aria-hidden="true" viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+          <path d="M6 6l12 12M18 6L6 18" />
+        </svg>
+      </button>
+
+      <div className="flex flex-col gap-5 sm:gap-6">
+        {isSavedCopy && (
+          <p
+            role="note"
+            className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200"
+          >
+            This is a saved copy from while you were offline, so changes here aren&apos;t saved.
+            Copy anything you typed, then reload once you&apos;re online to edit the latest version.
+          </p>
+        )}
+
         {/* Title */}
         <input
           type="text"
           value={title}
           onChange={(e) => handleTitleChange(e.target.value)}
-          className="text-xl font-semibold bg-transparent border-none outline-none w-full placeholder-gray-400 focus:ring-0"
+          aria-label="Issue title"
+          className="w-full min-w-0 rounded-sm bg-transparent text-lg font-semibold outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring sm:text-xl"
           placeholder="Issue title"
         />
 
         {/* Metadata row */}
-        <div className="flex items-center gap-4 flex-wrap">
+        <div className="grid grid-cols-2 items-end gap-3 sm:flex sm:flex-wrap sm:items-center sm:gap-4">
           <Select
             value={status}
             onChange={(e) => handleStatusChange(e.target.value as IssueStatus)}
             label="Status"
-            className="w-auto"
+            className="sm:w-auto"
           >
             {statusOptions.map((opt) => (
               <option key={opt.value} value={opt.value}>
@@ -143,7 +231,7 @@ export function IssueDetailModal({ issue, onClose, onUpdate }: IssueDetailModalP
             value={priority}
             onChange={(e) => handlePriorityChange(e.target.value as IssuePriority)}
             label="Priority"
-            className="w-auto"
+            className="sm:w-auto"
           >
             {priorityOptions.map((opt) => (
               <option key={opt.value} value={opt.value}>
@@ -155,17 +243,15 @@ export function IssueDetailModal({ issue, onClose, onUpdate }: IssueDetailModalP
           {issue.epic && (
             <Badge
               intent="primary"
+              className="col-span-2 min-w-0 max-w-full justify-self-start"
+              title={issue.epic.name}
               style={{
                 backgroundColor: `${issue.epic.color}20`,
                 color: issue.epic.color,
               }}
             >
-              {issue.epic.name}
+              <span className="min-w-0 truncate">{issue.epic.name}</span>
             </Badge>
-          )}
-
-          {isSaving && (
-            <span className="text-xs text-muted-foreground">Saving...</span>
           )}
         </div>
 
@@ -176,17 +262,18 @@ export function IssueDetailModal({ issue, onClose, onUpdate }: IssueDetailModalP
             <TabsTrigger value="preview">Preview</TabsTrigger>
           </TabsList>
 
-          <TabsContent value="write">
+          <TabsContent value="write" className="rounded-md focus-visible:ring-2 focus-visible:ring-ring">
             <Textarea
               value={description}
               onChange={(e) => handleDescriptionChange(e.target.value)}
               placeholder="Add a description... (supports markdown)"
-              className="min-h-[200px] font-mono"
+              aria-label="Description"
+              className="min-h-[160px] font-mono sm:min-h-[200px]"
             />
           </TabsContent>
 
-          <TabsContent value="preview">
-            <div className="min-h-[200px] p-3 border border-border rounded-md bg-background">
+          <TabsContent value="preview" className="rounded-md focus-visible:ring-2 focus-visible:ring-ring">
+            <div className="min-h-[160px] rounded-md border border-border bg-background p-3 sm:min-h-[200px]">
               {description ? (
                 <MarkdownPreview content={description} />
               ) : (
@@ -200,9 +287,31 @@ export function IssueDetailModal({ issue, onClose, onUpdate }: IssueDetailModalP
         <SubtaskList issueId={issue.id} subtasks={issue.subtasks} />
 
         {/* Footer */}
-        <div className="flex items-center justify-between text-xs text-muted-foreground pt-2 border-t border-border">
-          <span>Created {new Date(issue.createdAt).toLocaleDateString()}</span>
-          <span>Updated {new Date(issue.updatedAt).toLocaleDateString()}</span>
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border pt-3">
+          <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+            <span>
+              Created <LocalDate date={issue.createdAt} />
+            </span>
+            <span>
+              Updated <LocalDate date={issue.updatedAt} />
+            </span>
+          </div>
+          <div className="ml-auto flex flex-wrap items-center justify-end gap-3">
+            <span
+              aria-live="polite"
+              className={`text-xs ${saveError ? "text-destructive" : "text-muted-foreground"}`}
+            >
+              {saveError ?? (isSaving ? "Saving..." : "")}
+            </span>
+            {closeFailed && saveError && (
+              <Button intent="ghost" size="sm" className="h-9 shrink-0 pointer-fine:h-8" onClick={handleDiscard}>
+                Discard changes
+              </Button>
+            )}
+            <Button intent="primary" size="sm" className="h-9 shrink-0 pointer-fine:h-8" onClick={handleClose}>
+              Done
+            </Button>
+          </div>
         </div>
       </div>
     </Modal>

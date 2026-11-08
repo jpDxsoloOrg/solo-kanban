@@ -20,6 +20,12 @@ enum IssuePriority {
   URGENT
 }
 
+enum SprintStatus {
+  PLANNED
+  ACTIVE
+  COMPLETED
+}
+
 model Project {
   id          String   @id @default(cuid())
   name        String
@@ -28,6 +34,7 @@ model Project {
   updatedAt   DateTime @updatedAt
   epics       Epic[]
   issues      Issue[]
+  sprints     Sprint[]
 }
 
 model Epic {
@@ -44,6 +51,30 @@ model Epic {
   issues      Issue[]
 
   @@index([projectId])
+}
+
+// A time-boxed iteration. A project has at most one ACTIVE sprint (enforced in
+// sprint-actions). The board shows the active sprint; completing it archives
+// its DONE issues with it and moves unfinished issues elsewhere.
+model Sprint {
+  id          String       @id @default(cuid())
+  number      Int          // per-project sequence used for default names
+  name        String
+  goal        String?
+  status      SprintStatus @default(PLANNED)
+  startDate   DateTime?
+  endDate     DateTime?    // planned end date
+  completedAt DateTime?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  projectId   String
+  project     Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  issues      Issue[]
+
+  @@unique([projectId, number])
+  @@index([projectId, status])
 }
 
 model Issue {
@@ -63,11 +94,17 @@ model Issue {
   epicId      String?
   epic        Epic?         @relation(fields: [epicId], references: [id], onDelete: SetNull)
 
+  // null = backlog. `order` is scoped to (projectId, sprintId, status).
+  sprintId    String?
+  sprint      Sprint?       @relation(fields: [sprintId], references: [id], onDelete: SetNull)
+
   subtasks    Subtask[]
+  comments    Comment[]
 
   @@unique([projectId, number])
   @@index([projectId, status])
   @@index([epicId])
+  @@index([sprintId, status])
 }
 
 model Subtask {
@@ -82,4 +119,24 @@ model Subtask {
   issue       Issue    @relation(fields: [issueId], references: [id], onDelete: Cascade)
 
   @@index([issueId])
+}
+
+// Markdown comment on an issue. Threads are one level deep: a top-level
+// comment (parentId = null) can have replies, replies cannot have replies.
+model Comment {
+  id        String    @id @default(cuid())
+  body      String
+  editedAt  DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  issueId   String
+  issue     Issue     @relation(fields: [issueId], references: [id], onDelete: Cascade)
+
+  parentId  String?
+  parent    Comment?  @relation("CommentReplies", fields: [parentId], references: [id], onDelete: Cascade)
+  replies   Comment[] @relation("CommentReplies")
+
+  @@index([issueId, createdAt])
+  @@index([parentId])
 }

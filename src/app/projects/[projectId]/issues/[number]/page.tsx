@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { AppShell } from "@/components/layout/AppShell";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { getProjects } from "@/actions/project-actions";
+import { getComments } from "@/actions/comment-actions";
 import { IssueView } from "@/components/board/IssueView";
 
 interface IssuePageProps {
@@ -14,7 +15,7 @@ export default async function IssuePage({ params }: IssuePageProps) {
   const numericNumber = Number.parseInt(number, 10);
   if (!Number.isFinite(numericNumber)) notFound();
 
-  const [projects, project, issue] = await Promise.all([
+  const [projects, project, issue, sprints] = await Promise.all([
     getProjects(),
     prisma.project.findUnique({
       where: { id: projectId },
@@ -24,12 +25,22 @@ export default async function IssuePage({ params }: IssuePageProps) {
       where: { projectId_number: { projectId, number: numericNumber } },
       include: {
         epic: true,
+        sprint: true,
         subtasks: { orderBy: { order: "asc" } },
+        _count: { select: { comments: true } },
       },
+    }),
+    // Sprints an issue can be moved into (completed sprints are history).
+    prisma.sprint.findMany({
+      where: { projectId, status: { in: ["ACTIVE", "PLANNED"] } },
+      include: { _count: { select: { issues: true } } },
+      orderBy: { number: "asc" },
     }),
   ]);
 
   if (!project || !issue) notFound();
+
+  const comments = await getComments(issue.id);
 
   return (
     <AppShell
@@ -42,7 +53,12 @@ export default async function IssuePage({ params }: IssuePageProps) {
         />
       }
     >
-      <IssueView issue={issue} projectId={projectId} />
+      <IssueView
+        issue={issue}
+        projectId={projectId}
+        comments={comments}
+        sprints={sprints}
+      />
     </AppShell>
   );
 }

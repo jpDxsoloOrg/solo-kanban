@@ -4,8 +4,60 @@
 
 @custom-variant dark (&:where(.dark, .dark *));
 
+/* Desktop sidebar collapsed to a rail: <html data-sidebar="collapsed">. */
+@custom-variant sidebar-collapsed (&:where([data-sidebar="collapsed"] *));
+
 @source "../../node_modules/@dxsolo/ui";
 
 body {
   font-family: var(--font-sans), Arial, Helvetica, sans-serif;
+}
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /*
+   * iOS zooms the page when a form field under 16px gets focus. On phones and
+   * touch screens, render fields at >= 16px: small text utilities resolve to
+   * 1rem on the field itself, larger ones (e.g. text-xl titles) are untouched.
+   */
+  @media (max-width: 47.999rem), (pointer: coarse) {
+    input,
+    select,
+    textarea {
+      --text-xs: 1rem;
+      --text-sm: 1rem;
+      font-size: 1rem;
+    }
+  }
+}
+
+/*
+ * Every modal panel (@dxsolo/ui Modal and AlertDialog, and any other
+ * aria-modal dialog) fits the viewport: it never touches the screen edges and
+ * scrolls internally when taller than the screen (the modals lock body
+ * scrolling, so a panel taller than the viewport was unreachable on phones).
+ * Unlayered on purpose so it wins over utility classes on the panel.
+ */
+[role="dialog"][aria-modal="true"],
+[role="alertdialog"][aria-modal="true"] {
+  max-height: calc(
+    100dvh - 2rem - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)
+  );
+  margin-inline: max(1rem, env(safe-area-inset-left, 0px), env(safe-area-inset-right, 0px));
+  min-width: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  overflow-wrap: break-word;
+}
+
+@media (max-width: 39.999rem) {
+  [role="dialog"][aria-modal="true"],
+  [role="alertdialog"][aria-modal="true"] {
+    padding: 1.25rem;
+  }
 }
