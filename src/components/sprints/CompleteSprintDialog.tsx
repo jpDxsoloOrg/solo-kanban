@@ -108,13 +108,23 @@ function CompleteSprintForm({
     setError(null);
     onBusyChange(true);
     startTransition(async () => {
-      // Send the browser's date so a sprint started here begins on the
-      // user's calendar day, not the server's UTC day.
-      const result = await completeSprint(sprint.id, {
-        moveIncompleteTo: target,
-        startNext,
-        today: todayInputValue(),
-      });
+      let result: Awaited<ReturnType<typeof completeSprint>>;
+      try {
+        // Send the browser's date so a sprint started here begins on the
+        // user's calendar day, not the server's UTC day.
+        result = await completeSprint(sprint.id, {
+          moveIncompleteTo: target,
+          startNext,
+          today: todayInputValue(),
+        });
+      } catch (err) {
+        // Offline, server down, or a stale tab after a deploy. Thrown out of
+        // the transition it would replace the page with the error screen.
+        console.error("Failed to complete sprint:", err);
+        onBusyChange(false);
+        setError("Couldn't complete the sprint. Check your connection and try again.");
+        return;
+      }
       if (!result.ok) {
         onBusyChange(false);
         setError(result.error);

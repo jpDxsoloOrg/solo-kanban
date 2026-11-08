@@ -150,8 +150,20 @@ export function Board({
           order: index,
         }));
 
-        const otherIssues = without.filter((i) => i.status !== newStatus);
-        return [...otherIssues, ...reindexed];
+        // Close the gap the card left in its old column, the way the server
+        // does, so later drops there compute the right index.
+        const sourceColumn =
+          issue.status === newStatus
+            ? []
+            : without
+                .filter((i) => i.status === issue.status)
+                .sort((a, b) => a.order - b.order)
+                .map((item, index) => ({ ...item, order: index }));
+
+        const otherIssues = without.filter(
+          (i) => i.status !== newStatus && i.status !== issue.status
+        );
+        return [...otherIssues, ...sourceColumn, ...reindexed];
       });
 
       try {
@@ -322,10 +334,11 @@ export function Board({
         </div>
       </div>
 
-      {/* Move confirmations and errors */}
+      {/* Move confirmations and errors. Above the page and the phone top bar
+          (z-20), below the phone drawer's backdrop (z-30) and drawer (z-40). */}
       <div
         aria-live="polite"
-        className="pointer-events-none fixed inset-x-0 bottom-[calc(1rem+env(safe-area-inset-bottom))] z-40 flex justify-center px-4"
+        className="pointer-events-none fixed inset-x-0 bottom-[calc(1rem+env(safe-area-inset-bottom))] z-[25] flex justify-center px-4"
       >
         {toast && (
           <div

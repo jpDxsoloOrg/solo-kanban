@@ -5,7 +5,7 @@ import type { Comment } from "@prisma/client";
 import { addComment } from "@/actions/comment-actions";
 import type { CommentWithReplies } from "@/types";
 import { CommentComposer } from "./CommentComposer";
-import { CommentItem } from "./CommentItem";
+import { CommentItem, type OrphanedDraft } from "./CommentItem";
 
 /** Threads with more replies than this start with the older ones collapsed. */
 const COLLAPSE_AFTER = 3;
@@ -18,6 +18,7 @@ export interface CommentThreadItemProps {
   onReplyAdded: (reply: Comment) => void;
   onUpdated: (comment: Comment) => void;
   onDeleted: (commentId: string) => void;
+  onDraftOrphaned: (draft: OrphanedDraft) => void;
 }
 
 /** One top-level comment, its replies, and its reply composer. */
@@ -27,6 +28,7 @@ export function CommentThreadItem({
   onReplyAdded,
   onUpdated,
   onDeleted,
+  onDraftOrphaned,
 }: CommentThreadItemProps) {
   const repliesId = useId();
   const [expanded, setExpanded] = useState(false);
@@ -34,6 +36,22 @@ export function CommentThreadItem({
   const replyTextareaRef = useRef<HTMLTextAreaElement>(null);
   const replyOpenerRef = useRef<HTMLElement | null>(null);
   const restoreReplyFocus = useRef(false);
+  const replyDraftRef = useRef("");
+  const onDraftOrphanedRef = useRef(onDraftOrphaned);
+
+  useEffect(() => {
+    onDraftOrphanedRef.current = onDraftOrphaned;
+  }, [onDraftOrphaned]);
+
+  // A refresh that drops this thread (deleted elsewhere) unmounts the reply
+  // composer: hand an unsent reply up instead of losing it.
+  const threadId = thread.id;
+  useEffect(() => {
+    return () => {
+      const body = replyDraftRef.current;
+      if (body.trim()) onDraftOrphanedRef.current({ kind: "reply", body, commentIds: [threadId] });
+    };
+  }, [threadId]);
 
   useEffect(() => {
     if (!replying && restoreReplyFocus.current) {
@@ -57,6 +75,7 @@ export function CommentThreadItem({
   };
 
   const closeReply = () => {
+    replyDraftRef.current = "";
     restoreReplyFocus.current = true;
     setReplying(false);
   };
@@ -79,6 +98,7 @@ export function CommentThreadItem({
           onReply={openReply}
           onUpdated={onUpdated}
           onDeleted={onDeleted}
+          onDraftOrphaned={onDraftOrphaned}
         />
       </div>
 
@@ -109,6 +129,7 @@ export function CommentThreadItem({
                       onReply={openReply}
                       onUpdated={onUpdated}
                       onDeleted={onDeleted}
+                      onDraftOrphaned={onDraftOrphaned}
                     />
                   </li>
                 ))}
@@ -124,6 +145,9 @@ export function CommentThreadItem({
                   pendingLabel="Replying…"
                   onSubmit={handleReply}
                   onCancel={closeReply}
+                  onValueChange={(value) => {
+                    replyDraftRef.current = value;
+                  }}
                   textareaRef={replyTextareaRef}
                   autoFocus
                   minHeightClass="min-h-[72px]"

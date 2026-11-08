@@ -90,9 +90,19 @@ function SprintForm({ projectId, sprint, onBusyChange, onCancel, onSaved }: Spri
         startDate: startDate || null,
         endDate: endDate || null,
       };
-      const result = isEdit
-        ? await updateSprint(sprint.id, { ...input, name })
-        : await createSprint(projectId, { ...input, ...(name.trim() && { name }) });
+      let result: Awaited<ReturnType<typeof createSprint>>;
+      try {
+        result = isEdit
+          ? await updateSprint(sprint.id, { ...input, name })
+          : await createSprint(projectId, { ...input, ...(name.trim() && { name }) });
+      } catch (err) {
+        // Offline, server down, or a stale tab after a deploy. Thrown out of
+        // the transition it would replace the page with the error screen.
+        console.error("Failed to save sprint:", err);
+        onBusyChange(false);
+        setError("Couldn't save the sprint. Check your connection and try again.");
+        return;
+      }
       if (!result.ok) {
         onBusyChange(false);
         setError(result.error);

@@ -10,6 +10,17 @@ import { CommentComposer, TOUCH_BUTTON_SIZE } from "./CommentComposer";
 import { RelativeTime, formatFullDateTime } from "./RelativeTime";
 import { useNow } from "./useNow";
 
+/**
+ * Unsent text from a composer that went away because a refresh removed its
+ * comment (deleted elsewhere), handed up so it isn't lost.
+ */
+export interface OrphanedDraft {
+  kind: "reply" | "edit";
+  body: string;
+  /** The comments it belonged to; deleting one of them here drops the draft on purpose. */
+  commentIds: (string | null)[];
+}
+
 export interface CommentItemProps {
   comment: Comment;
   /** Replies are rendered indented under their thread's top-level comment. */
@@ -20,6 +31,7 @@ export interface CommentItemProps {
   onReply: (opener: HTMLElement) => void;
   onUpdated: (comment: Comment) => void;
   onDeleted: (commentId: string) => void;
+  onDraftOrphaned: (draft: OrphanedDraft) => void;
 }
 
 function pluralize(count: number, singular: string, plural: string) {
@@ -49,6 +61,7 @@ export function CommentItem({
   onReply,
   onUpdated,
   onDeleted,
+  onDraftOrphaned,
 }: CommentItemProps) {
   const [editing, setEditing] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
@@ -56,6 +69,26 @@ export function CommentItem({
   const [error, setError] = useState<string | null>(null);
   const editButtonRef = useRef<HTMLButtonElement>(null);
   const restoreEditFocus = useRef(false);
+  // The open editor's text, while it differs from the saved comment.
+  const editDraftRef = useRef<string | null>(null);
+  const onDraftOrphanedRef = useRef(onDraftOrphaned);
+
+  useEffect(() => {
+    onDraftOrphanedRef.current = onDraftOrphaned;
+  }, [onDraftOrphaned]);
+
+  // A refresh that drops this comment (deleted elsewhere) unmounts the open
+  // editor: hand the unsaved text up instead of losing it.
+  const commentId = comment.id;
+  const parentId = comment.parentId;
+  useEffect(() => {
+    return () => {
+      const body = editDraftRef.current;
+      if (body?.trim()) {
+        onDraftOrphanedRef.current({ kind: "edit", body, commentIds: [commentId, parentId] });
+      }
+    };
+  }, [commentId, parentId]);
 
   useEffect(() => {
     if (!editing && restoreEditFocus.current) {
@@ -67,6 +100,7 @@ export function CommentItem({
   const noun = isReply ? "reply" : "comment";
 
   const closeEditor = () => {
+    editDraftRef.current = null;
     restoreEditFocus.current = true;
     setEditing(false);
   };
@@ -175,6 +209,9 @@ export function CommentItem({
             pendingLabel="Saving…"
             onSubmit={handleSave}
             onCancel={closeEditor}
+            onValueChange={(value) => {
+              editDraftRef.current = value.trim() === comment.body ? null : value;
+            }}
             autoFocus
             minHeightClass="min-h-[72px]"
           />

@@ -53,33 +53,52 @@ export function IssueDetailModal({ issue, onClose, onUpdate }: IssueDetailModalP
   const [priority, setPriority] = useState(issue.priority);
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  // Closing was stopped by a failed save: offer to close without saving.
+  const [closeFailed, setCloseFailed] = useState(false);
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   // Fields edited since the last save. Merged, so quick successive edits
   // (a title, then the priority) are all saved, not just the last one.
   const unsavedFieldsRef = useRef<Partial<EditableFields>>({});
+  // Saves still waiting for the server; closing waits for them.
+  const inFlightRef = useRef(new Set<Promise<boolean>>());
+  const closingRef = useRef(false);
 
-  /** Save the unsaved fields now (cancelling the debounce timer). */
-  const save = useCallback(async () => {
+  /**
+   * Save the unsaved fields now (cancelling the debounce timer). Resolves
+   * false if the save failed; the fields are then kept for a retry.
+   */
+  const save = useCallback(async (): Promise<boolean> => {
     if (saveTimeoutRef.current) {
       clearTimeout(saveTimeoutRef.current);
       saveTimeoutRef.current = null;
     }
     const fields = unsavedFieldsRef.current;
-    if (Object.keys(fields).length === 0) return;
+    if (Object.keys(fields).length === 0) return true;
     unsavedFieldsRef.current = {};
 
     setIsSaving(true);
+    const request = (async () => {
+      try {
+        const updated = await updateIssue(issue.id, fields);
+        onUpdate({ ...issue, ...updated });
+        setSaveError(null);
+        setCloseFailed(false);
+        return true;
+      } catch (error) {
+        console.error("Failed to save:", error);
+        // Retry these with the next edit (or Done); newer values win.
+        unsavedFieldsRef.current = { ...fields, ...unsavedFieldsRef.current };
+        setSaveError("Couldn't save your changes. Keep editing or press Done to retry.");
+        return false;
+      } finally {
+        setIsSaving(false);
+      }
+    })();
+    inFlightRef.current.add(request);
     try {
-      const updated = await updateIssue(issue.id, fields);
-      onUpdate({ ...issue, ...updated });
-      setSaveError(null);
-    } catch (error) {
-      console.error("Failed to save:", error);
-      // Retry these with the next edit; newer values win.
-      unsavedFieldsRef.current = { ...fields, ...unsavedFieldsRef.current };
-      setSaveError("Couldn't save your changes. Keep editing to retry.");
+      return await request;
     } finally {
-      setIsSaving(false);
+      inFlightRef.current.delete(request);
     }
   }, [issue, onUpdate]);
 
@@ -98,9 +117,25 @@ export function IssueDetailModal({ issue, onClose, onUpdate }: IssueDetailModalP
     [save]
   );
 
-  // Closing saves right away, before the page re-reads the issue.
-  const handleClose = () => {
-    void save();
+  // Closing saves right away, before the page re-reads the issue. If that
+  // fails the modal stays open with the error, so nothing typed is lost.
+  const handleClose = async () => {
+    if (closingRef.current) return;
+    closingRef.current = true;
+    try {
+      // A save that's already running may fail and hand its fields back.
+      while (inFlightRef.current.size > 0) await Promise.all(inFlightRef.current);
+      if (await save()) onClose();
+      else setCloseFailed(true);
+    } finally {
+      closingRef.current = false;
+    }
+  };
+
+  const handleDiscard = () => {
+    if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+    saveTimeoutRef.current = null;
+    unsavedFieldsRef.current = {};
     onClose();
   };
 
@@ -245,13 +280,18 @@ export function IssueDetailModal({ issue, onClose, onUpdate }: IssueDetailModalP
               Updated <LocalDate date={issue.updatedAt} />
             </span>
           </div>
-          <div className="ml-auto flex items-center gap-3">
+          <div className="ml-auto flex flex-wrap items-center justify-end gap-3">
             <span
               aria-live="polite"
               className={`text-xs ${saveError ? "text-destructive" : "text-muted-foreground"}`}
             >
               {saveError ?? (isSaving ? "Saving..." : "")}
             </span>
+            {closeFailed && saveError && (
+              <Button intent="ghost" size="sm" className="h-9 shrink-0 pointer-fine:h-8" onClick={handleDiscard}>
+                Discard changes
+              </Button>
+            )}
             <Button intent="primary" size="sm" className="h-9 shrink-0 pointer-fine:h-8" onClick={handleClose}>
               Done
             </Button>

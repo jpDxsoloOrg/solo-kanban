@@ -117,25 +117,46 @@ function StartSprintForm({ projectId, sprint, onBusyChange, onCancel, onStarted 
 
     setError(null);
     onBusyChange(true);
+    // Offline, server down, or a stale tab after a deploy. Thrown out of the
+    // transition it would replace the page with the error screen.
+    const handleUnreachable = (err: unknown) => {
+      console.error("Failed to start sprint:", err);
+      onBusyChange(false);
+      setError("Couldn't start the sprint. Check your connection and try again.");
+    };
+
     startTransition(async () => {
       let target = sprint ?? created;
       if (!target) {
-        const result = await createSprint(projectId, {
-          ...(name.trim() && { name }),
-          goal,
-          startDate,
-          endDate,
-        });
-        if (!result.ok) {
-          onBusyChange(false);
-          setError(result.error);
+        let createResult: Awaited<ReturnType<typeof createSprint>>;
+        try {
+          createResult = await createSprint(projectId, {
+            ...(name.trim() && { name }),
+            goal,
+            startDate,
+            endDate,
+          });
+        } catch (err) {
+          handleUnreachable(err);
           return;
         }
-        target = result.data;
-        setCreated(result.data);
+        if (!createResult.ok) {
+          onBusyChange(false);
+          setError(createResult.error);
+          return;
+        }
+        target = createResult.data;
+        setCreated(createResult.data);
       }
 
-      const result = await startSprint(target.id, { startDate, endDate });
+      let result: Awaited<ReturnType<typeof startSprint>>;
+      try {
+        result = await startSprint(target.id, { startDate, endDate });
+      } catch (err) {
+        // A sprint created above is kept (see `created`): retrying only starts it.
+        handleUnreachable(err);
+        return;
+      }
       if (!result.ok) {
         onBusyChange(false);
         setError(result.error);
