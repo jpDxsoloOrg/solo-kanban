@@ -30,6 +30,9 @@ export interface IssueRowProps {
   projectId: string;
   /** Sprints the issue can be moved to. Omit for a read-only row. */
   moveTargets?: MoveTarget[];
+  /** With `onSelectedChange`, shows a checkbox for bulk actions. */
+  selected?: boolean;
+  onSelectedChange?: (issueId: string, selected: boolean) => void;
 }
 
 const BACKLOG = "__backlog__";
@@ -43,7 +46,7 @@ const BACKLOG = "__backlog__";
  * (Windows, Linux), so acting on every change would move the issue as soon
  * as a keyboard user looks through the options.
  */
-export function IssueRow({ issue, projectId, moveTargets }: IssueRowProps) {
+export function IssueRow({ issue, projectId, moveTargets, selected = false, onSelectedChange }: IssueRowProps) {
   const router = useRouter();
   const [choice, setChoice] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -108,7 +111,25 @@ export function IssueRow({ issue, projectId, moveTargets }: IssueRowProps) {
   };
 
   return (
-    <li ref={rowRef} className={`px-3 py-2.5 sm:px-4 ${isPending ? "opacity-60" : ""}`}>
+    <li
+      ref={rowRef}
+      className={`flex items-start gap-1 px-3 py-2.5 sm:px-4 ${isPending ? "opacity-60" : ""} ${
+        selected ? "bg-primary/5" : ""
+      }`}
+    >
+      {onSelectedChange && (
+        // The label is the touch target; the box itself stays small.
+        <label className="-my-1 -ml-2 flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center sm:h-8">
+          <input
+            type="checkbox"
+            checked={selected}
+            onChange={(e) => onSelectedChange(issue.id, e.target.checked)}
+            aria-label={`Select #${issue.number} ${issue.title}`}
+            className="h-4 w-4 cursor-pointer accent-[var(--color-primary)] dark:[color-scheme:dark]"
+          />
+        </label>
+      )}
+      <div className="min-w-0 flex-1">
       <div className="flex flex-col gap-1.5 sm:flex-row sm:items-center sm:gap-3">
         <Link
           href={`/projects/${projectId}/issues/${issue.number}`}
@@ -183,6 +204,7 @@ export function IssueRow({ issue, projectId, moveTargets }: IssueRowProps) {
           {error}
         </p>
       )}
+      </div>
     </li>
   );
 }
