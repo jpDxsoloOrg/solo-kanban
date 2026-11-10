@@ -454,3 +454,61 @@ export async function moveIssueToSprint(
     return { ok: false, error: errorMessage(error, "Failed to move issue.") };
   }
 }
+
+/** Most issues one bulk move accepts. */
+const MAX_BULK_MOVE = 500;
+
+/**
+ * Move several issues at once into a PLANNED/ACTIVE sprint, or to the backlog
+ * with `sprintId: null`. Each issue keeps its status and is appended to that
+ * status column in the target, in its current relative order. Issues already
+ * there, and DONE issues archived with a completed sprint, are skipped.
+ */
+export async function moveIssuesToSprintBulk(
+  projectId: string,
+  issueIds: string[],
+  sprintId: string | null,
+): Promise<ActionResult<{ moved: number; skipped: number }>> {
+  const ids = [...new Set(issueIds)];
+  if (ids.length === 0) return { ok: false, error: "Select at least one issue." };
+  if (ids.length > MAX_BULK_MOVE) {
+    return { ok: false, error: `Move at most ${MAX_BULK_MOVE} issues at a time.` };
+  }
+
+  try {
+    const result = await prisma.$transaction(async (tx) => {
+      // Every path that re-orders columns or completes a sprint takes this
+      // lock first, so the rows read below can't change underneath us.
+      await lockProjectOrdering(tx, projectId);
+
+      if (sprintId) {
+        const [sprint] = await tx.$queryRaw<Pick<Sprint, "projectId" | "status">[]>`
+          SELECT "projectId", "status" FROM "Sprint" WHERE "id" = ${sprintId} FOR KEY SHARE`;
+        if (!sprint || sprint.projectId !== projectId) {
+          throw new Error("That sprint doesn't exist in this project.");
+        }
+        if (sprint.status === "COMPLETED") {
+          throw new Error("Issues can't be added to a completed sprint.");
+        }
+      }
+
+      const issues = await tx.issue.findMany({
+        where: { id: { in: ids }, projectId },
+        select: { id: true, status: true, sprint: { select: { status: true } } },
+      });
+      // Finished work stays with the sprint it was completed in.
+      const movable = issues
+        .filter((issue) => !(issue.sprint?.status === "COMPLETED" && issue.status === "DONE"))
+        .map((issue) => issue.id);
+
+      const moved = await moveIssuesToSprint(tx, projectId, movable, sprintId);
+      return { moved, skipped: ids.length - moved };
+    }, ORDER_TRANSACTION_OPTIONS);
+
+    revalidateProject(projectId);
+    return { ok: true, data: result };
+  } catch (error) {
+    console.error("moveIssuesToSprintBulk failed:", error);
+    return { ok: false, error: errorMessage(error, "Failed to move issues.") };
+  }
+}
