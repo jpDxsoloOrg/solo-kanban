@@ -33,7 +33,13 @@ npx prisma db push
 npx prisma db seed
 ```
 
-### 4. Start the dev server
+### 4. Set up Google sign-in
+
+The app requires signing in with Google. Follow [Google sign-in](#google-sign-in)
+below to fill in `AUTH_SECRET`, `AUTH_GOOGLE_ID`, `AUTH_GOOGLE_SECRET` and
+`ALLOWED_EMAILS` in `.env`.
+
+### 5. Start the dev server
 
 ```bash
 npm run dev
@@ -57,6 +63,33 @@ npm run dev
 ```
 
 You do not need to re-run `prisma db push` or `prisma db seed` unless you've deleted the Docker volume. The data persists across restarts.
+
+## Google sign-in
+
+Every page requires signing in with a Google account listed in
+`ALLOWED_EMAILS`. The public API (`/api/v1`) uses API keys instead.
+
+1. In [Google Cloud Console](https://console.cloud.google.com/), pick or create
+   a project, then open **APIs & Services → OAuth consent screen** and set it up
+   (External, app name, your email). While it's in *Testing*, add your Google
+   account under **Test users**.
+2. Open **APIs & Services → Credentials → Create credentials → OAuth client ID**,
+   type **Web application**, and add these **Authorized redirect URIs**:
+   - `http://localhost:3000/api/auth/callback/google`
+   - `https://<your-amplify-domain>/api/auth/callback/google`
+3. Copy the client ID and secret into `.env`, generate a session secret, and
+   list who may sign in:
+
+   ```bash
+   AUTH_GOOGLE_ID="....apps.googleusercontent.com"
+   AUTH_GOOGLE_SECRET="..."
+   AUTH_SECRET="$(openssl rand -base64 32)"
+   ALLOWED_EMAILS="you@gmail.com"
+   AUTH_TRUST_HOST="true"
+   ```
+
+Removing an address from `ALLOWED_EMAILS` signs that account out on its next
+request. Signing out also clears the pages the app saved for offline use.
 
 ## Public API
 

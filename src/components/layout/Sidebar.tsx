@@ -11,6 +11,7 @@ import { createProject } from "@/actions/project-actions";
 import { todayInputValue } from "@/lib/sprint-dates";
 import { createEpic, updateEpic, deleteEpic } from "@/actions/epic-actions";
 import { InstallAppButton } from "@/components/pwa/InstallAppButton";
+import { AccountMenu } from "@/components/auth/AccountMenu";
 import { isNavigationError } from "./navigation-error";
 
 interface SidebarProps {
@@ -392,7 +393,7 @@ export function Sidebar({ projectId, projects, epics, epicFilter }: SidebarProps
         </div>
       </div>
 
-      {/* Install, shortcuts hint & theme toggle */}
+      {/* Install, shortcuts hint, theme toggle & account */}
       <div className="flex flex-col gap-3 border-t border-border pt-4">
         <InstallAppButton />
         {/* Keyboard hint only makes sense with a keyboard and mouse */}
@@ -408,6 +409,7 @@ export function Sidebar({ projectId, projects, epics, epicFilter }: SidebarProps
           size="sm"
         />
         <LiveUpdatesControl />
+        <AccountMenu />
       </div>
       {/* Create Project modal */}
       <Modal
