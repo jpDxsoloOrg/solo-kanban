@@ -15,7 +15,7 @@ export interface UpdateIssueInput {
   description?: string | null;
   status?: IssueStatus;
   priority?: IssuePriority;
-  /** Callers must check the epic belongs to the issue's project. */
+  /** null removes the epic; must be an epic of the issue's project. */
   epicId?: string | null;
 }
 
@@ -32,6 +32,11 @@ export async function updateIssue(issueId: string, data: UpdateIssueInput) {
     // interleave with completing that sprint.
     const current = await lockIssue(tx, issueId);
     if (!current) throw new Error("Issue not found");
+
+    if (data.epicId) {
+      const epic = await tx.epic.findUnique({ where: { id: data.epicId }, select: { projectId: true } });
+      if (!epic || epic.projectId !== current.projectId) throw new Error("Epic not found");
+    }
 
     const patch: UpdateIssueInput & { order?: number; sprintId?: string | null } = { ...data };
     const statusChanged = data.status !== undefined && data.status !== current.status;
