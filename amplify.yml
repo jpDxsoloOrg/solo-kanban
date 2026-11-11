@@ -8,8 +8,14 @@ frontend:
         - npx prisma migrate deploy
     build:
       commands:
-        - env | grep -E '^(DATABASE_URL|DIRECT_DATABASE_URL)' | sed 's/=.*/=****/' || true
+        - env | grep -E '^(DATABASE_URL|DIRECT_DATABASE_URL|API_KEYS|AUTH_|ALLOWED_EMAILS)' | sed 's/=.*/=****/' || true
         - echo "DATABASE_URL=$DATABASE_URL" > .env.production
+        - echo "API_KEYS=$API_KEYS" >> .env.production
+        - echo "AUTH_SECRET=$AUTH_SECRET" >> .env.production
+        - echo "AUTH_GOOGLE_ID=$AUTH_GOOGLE_ID" >> .env.production
+        - echo "AUTH_GOOGLE_SECRET=$AUTH_GOOGLE_SECRET" >> .env.production
+        - echo "ALLOWED_EMAILS=$ALLOWED_EMAILS" >> .env.production
+        - echo "AUTH_TRUST_HOST=true" >> .env.production
         - npm run build
   artifacts:
     baseDirectory: .next
