@@ -88,6 +88,10 @@ Every page requires signing in with a Google account listed in
    AUTH_TRUST_HOST="true"
    ```
 
+When deployed (e.g. on Amplify), also set `AUTH_URL` to the site's public URL,
+such as `https://kanban.example.com`. Without it the server sees itself as
+`localhost:3000` and sign-in fails with `error=Configuration`.
+
 Removing an address from `ALLOWED_EMAILS` signs that account out on its next
 request. Signing out also clears the pages the app saved for offline use.
 
