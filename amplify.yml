@@ -8,8 +8,9 @@ frontend:
         - npx prisma migrate deploy
     build:
       commands:
-        - env | grep -E '^(DATABASE_URL|DIRECT_DATABASE_URL)' | sed 's/=.*/=****/' || true
+        - env | grep -E '^(DATABASE_URL|DIRECT_DATABASE_URL|API_KEYS)' | sed 's/=.*/=****/' || true
         - echo "DATABASE_URL=$DATABASE_URL" > .env.production
+        - echo "API_KEYS=$API_KEYS" >> .env.production
         - npm run build
   artifacts:
     baseDirectory: .next

@@ -12,6 +12,8 @@ import {
 export interface CreateIssueInput {
   projectId: string;
   title: string;
+  /** Markdown. */
+  description?: string | null;
   status?: IssueStatus;
   priority?: IssuePriority;
   epicId?: string | null;
@@ -22,6 +24,7 @@ export interface CreateIssueInput {
 export async function createIssue({
   projectId,
   title,
+  description,
   status = "OPEN",
   priority,
   epicId,
@@ -54,6 +57,7 @@ export async function createIssue({
     return tx.issue.create({
       data: {
         title: trimmed,
+        ...(description && { description }),
         status,
         order,
         number: (maxNumber._max.number ?? 0) + 1,

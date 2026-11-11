@@ -10,11 +10,13 @@ import {
   ORDER_TRANSACTION_OPTIONS,
 } from "@/lib/issue-order";
 
-interface UpdateIssueInput {
+export interface UpdateIssueInput {
   title?: string;
-  description?: string;
+  description?: string | null;
   status?: IssueStatus;
   priority?: IssuePriority;
+  /** Callers must check the epic belongs to the issue's project. */
+  epicId?: string | null;
 }
 
 export async function updateIssue(issueId: string, data: UpdateIssueInput) {

@@ -2,12 +2,7 @@
 
 import { prisma } from "@/lib/prisma";
 import { redirect } from "next/navigation";
-import {
-  addDays,
-  DEFAULT_SPRINT_LENGTH_DAYS,
-  fromDateInputValue,
-  utcToday,
-} from "@/lib/sprint-dates";
+import { insertProject } from "@/lib/projects";
 
 export async function getProjects() {
   return prisma.project.findMany({
@@ -24,24 +19,7 @@ export async function getProjects() {
  * Sprint 1 starts on their day rather than the server's UTC day.
  */
 export async function createProject(name: string, description?: string, today?: string) {
-  // Every project starts with an active sprint so the board works right away.
-  const startDate = fromDateInputValue(today) ?? utcToday();
-  const project = await prisma.project.create({
-    data: {
-      name,
-      description,
-      sprints: {
-        create: {
-          number: 1,
-          name: "Sprint 1",
-          status: "ACTIVE",
-          startDate,
-          endDate: addDays(startDate, DEFAULT_SPRINT_LENGTH_DAYS),
-        },
-      },
-    },
-  });
-
+  const project = await insertProject(name, description, today);
   redirect(`/projects/${project.id}/board`);
 }
 
