@@ -4,7 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { Button, Badge } from "@dxsolo/ui";
 import type { CommentWithReplies, IssueWithRelations, SprintWithCounts } from "@/types";
-import type { Sprint } from "@prisma/client";
+import type { Epic, Sprint } from "@prisma/client";
 import { IssuePriority } from "@prisma/client";
 import { IssueDetailModal } from "./IssueDetailModal";
 import { MarkdownPreview } from "./MarkdownPreview";
@@ -37,9 +37,11 @@ interface IssueViewProps {
   comments: CommentWithReplies[];
   /** ACTIVE and PLANNED sprints the issue can be moved into. */
   sprints: SprintWithCounts[];
+  /** The project's epics, for the edit dialog's epic picker. */
+  epics: Epic[];
 }
 
-export function IssueView({ issue: serverIssue, projectId, comments, sprints }: IssueViewProps) {
+export function IssueView({ issue: serverIssue, projectId, comments, sprints, epics }: IssueViewProps) {
   const [editing, setEditing] = useState(false);
   // Follows refreshed server data (live updates from other tabs/devices),
   // but not while the edit modal is open: it works on this copy.
@@ -137,6 +139,8 @@ export function IssueView({ issue: serverIssue, projectId, comments, sprints }: 
       {editing && (
         <IssueDetailModal
           issue={issue}
+          projectId={projectId}
+          epics={epics}
           onClose={handleClose}
           onUpdate={(updated) => setIssue(updated)}
         />

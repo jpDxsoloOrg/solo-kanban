@@ -58,6 +58,7 @@ export default async function IssuePage({ params }: IssuePageProps) {
         projectId={projectId}
         comments={comments}
         sprints={sprints}
+        epics={project.epics}
       />
     </AppShell>
   );

@@ -1,11 +1,13 @@
 "use client";
 
 import { useState, useCallback, useEffect, useRef } from "react";
+import { useRouter } from "next/navigation";
 import {
   Modal,
   Button,
   Select,
-  Badge,
+  Input,
+  ColorPicker,
   Tabs,
   TabsList,
   TabsTrigger,
@@ -13,8 +15,10 @@ import {
   Textarea,
 } from "@dxsolo/ui";
 import type { IssueWithRelations } from "@/types";
+import type { Epic } from "@prisma/client";
 import { IssueStatus, IssuePriority } from "@prisma/client";
 import { updateIssue } from "@/actions/update-issue";
+import { createEpic } from "@/actions/epic-actions";
 import { MarkdownPreview } from "./MarkdownPreview";
 import { SubtaskList } from "./SubtaskList";
 import { LocalDate } from "@/components/common/LocalDate";
@@ -22,6 +26,9 @@ import { useSavedCopyAt } from "@/components/pwa/saved-copy";
 
 interface IssueDetailModalProps {
   issue: IssueWithRelations;
+  projectId: string;
+  /** The project's epics, for the epic picker. */
+  epics: Epic[];
   onClose: () => void;
   onUpdate: (updated: IssueWithRelations) => void;
 }
@@ -38,7 +45,13 @@ interface EditableFields {
   description: string;
   status: IssueStatus;
   priority: IssuePriority;
+  epicId: string | null;
 }
+
+/** Epic picker value that opens the "new epic" form. */
+const NEW_EPIC = "__new__";
+const DEFAULT_EPIC_COLOR = "#6366f1";
+const MAX_EPIC_NAME_LENGTH = 200;
 
 const priorityOptions: { value: IssuePriority; label: string }[] = [
   { value: "URGENT", label: "Urgent" },
@@ -47,11 +60,20 @@ const priorityOptions: { value: IssuePriority; label: string }[] = [
   { value: "LOW", label: "Low" },
 ];
 
-export function IssueDetailModal({ issue, onClose, onUpdate }: IssueDetailModalProps) {
+export function IssueDetailModal({ issue, projectId, epics, onClose, onUpdate }: IssueDetailModalProps) {
+  const router = useRouter();
   const [title, setTitle] = useState(issue.title);
   const [description, setDescription] = useState(issue.description ?? "");
   const [status, setStatus] = useState(issue.status);
   const [priority, setPriority] = useState(issue.priority);
+  const [epicId, setEpicId] = useState<string | null>(issue.epicId);
+  // Epics created in this dialog, until the page's list catches up.
+  const [createdEpics, setCreatedEpics] = useState<Epic[]>([]);
+  const [newEpicOpen, setNewEpicOpen] = useState(false);
+  const [newEpicName, setNewEpicName] = useState("");
+  const [newEpicColor, setNewEpicColor] = useState(DEFAULT_EPIC_COLOR);
+  const [creatingEpic, setCreatingEpic] = useState(false);
+  const [epicError, setEpicError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   // Closing was stopped by a failed save: offer to close without saving.
@@ -177,6 +199,52 @@ export function IssueDetailModal({ issue, onClose, onUpdate }: IssueDetailModalP
     debouncedSave({ priority: newPriority });
   };
 
+  const epicOptions = [
+    ...epics,
+    ...createdEpics.filter((created) => !epics.some((epic) => epic.id === created.id)),
+  ].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
+  const selectedEpic = epicOptions.find((epic) => epic.id === epicId) ?? null;
+
+  const handleEpicChange = (value: string) => {
+    if (value === NEW_EPIC) {
+      setNewEpicOpen(true);
+      setEpicError(null);
+      return;
+    }
+    setNewEpicOpen(false);
+    const next = value || null;
+    setEpicId(next);
+    debouncedSave({ epicId: next });
+  };
+
+  const cancelNewEpic = () => {
+    setNewEpicOpen(false);
+    setNewEpicName("");
+    setNewEpicColor(DEFAULT_EPIC_COLOR);
+    setEpicError(null);
+  };
+
+  const handleCreateEpic = async () => {
+    const name = newEpicName.trim();
+    if (!name || creatingEpic || isSavedCopy) return;
+    setCreatingEpic(true);
+    setEpicError(null);
+    try {
+      const epic = await createEpic(projectId, name, newEpicColor);
+      setCreatedEpics((prev) => [...prev, epic]);
+      setEpicId(epic.id);
+      debouncedSave({ epicId: epic.id });
+      cancelNewEpic();
+      // Show the new epic in the sidebar and board filters too.
+      router.refresh();
+    } catch (error) {
+      console.error("Failed to create epic:", error);
+      setEpicError("Couldn't create the epic. Try again.");
+    } finally {
+      setCreatingEpic(false);
+    }
+  };
+
   return (
     <Modal open onClose={handleClose} title={`Edit #${issue.number}`} className="max-w-2xl">
       {/* Close button: phones have little backdrop left to tap */}
@@ -240,20 +308,73 @@ export function IssueDetailModal({ issue, onClose, onUpdate }: IssueDetailModalP
             ))}
           </Select>
 
-          {issue.epic && (
-            <Badge
-              intent="primary"
-              className="col-span-2 min-w-0 max-w-full justify-self-start"
-              title={issue.epic.name}
-              style={{
-                backgroundColor: `${issue.epic.color}20`,
-                color: issue.epic.color,
-              }}
+          <div className="col-span-2 flex min-w-0 items-end gap-2 sm:col-span-1">
+            {selectedEpic && !newEpicOpen && (
+              <span
+                aria-hidden="true"
+                className="mb-3 h-3 w-3 shrink-0 rounded-full"
+                style={{ backgroundColor: selectedEpic.color }}
+              />
+            )}
+            <Select
+              value={newEpicOpen ? NEW_EPIC : (epicId ?? "")}
+              onChange={(e) => handleEpicChange(e.target.value)}
+              label="Epic"
+              className="min-w-0 sm:w-auto sm:max-w-56"
             >
-              <span className="min-w-0 truncate">{issue.epic.name}</span>
-            </Badge>
-          )}
+              <option value="">No epic</option>
+              {epicOptions.map((epic) => (
+                <option key={epic.id} value={epic.id}>
+                  {epic.name}
+                </option>
+              ))}
+              <option value={NEW_EPIC}>+ New epic…</option>
+            </Select>
+          </div>
         </div>
+
+        {newEpicOpen && (
+          <div className="flex flex-col gap-3 rounded-md border border-border bg-muted/40 p-3">
+            <Input
+              label="New epic name"
+              placeholder="e.g. Authentication"
+              value={newEpicName}
+              maxLength={MAX_EPIC_NAME_LENGTH}
+              autoFocus
+              onChange={(e) => setNewEpicName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  void handleCreateEpic();
+                } else if (e.key === "Escape") {
+                  // Close just this form, not the whole dialog.
+                  e.stopPropagation();
+                  cancelNewEpic();
+                }
+              }}
+            />
+            <ColorPicker label="Color" value={newEpicColor} onChange={setNewEpicColor} />
+            {epicError && (
+              <p role="alert" className="text-sm text-destructive">
+                {epicError}
+              </p>
+            )}
+            <div className="flex justify-end gap-2">
+              <Button intent="ghost" size="sm" className="h-9 pointer-fine:h-8" onClick={cancelNewEpic}>
+                Cancel
+              </Button>
+              <Button
+                intent="primary"
+                size="sm"
+                className="h-9 pointer-fine:h-8"
+                onClick={() => void handleCreateEpic()}
+                disabled={!newEpicName.trim() || creatingEpic || isSavedCopy}
+              >
+                {creatingEpic ? "Creating..." : "Create & assign"}
+              </Button>
+            </div>
+          </div>
+        )}
 
         {/* Description: tabbed write/preview */}
         <Tabs defaultValue="write">

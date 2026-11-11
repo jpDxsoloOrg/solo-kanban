@@ -4,11 +4,14 @@ import { prisma } from "@/lib/prisma";
 import { revalidatePath } from "next/cache";
 
 export async function createEpic(projectId: string, name: string, color: string) {
+  const trimmed = name.trim();
+  if (!trimmed) throw new Error("Epic name can't be empty.");
   const epic = await prisma.epic.create({
-    data: { name, color, projectId },
+    data: { name: trimmed, color, projectId },
   });
 
-  revalidatePath(`/projects/${projectId}/board`);
+  // Every page of the project lists epics (sidebar, board filters, issue editor).
+  revalidatePath(`/projects/${projectId}`, "layout");
   return epic;
 }
 
