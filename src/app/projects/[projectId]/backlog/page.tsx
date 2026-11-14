@@ -23,10 +23,14 @@ const issueRowSelect = {
   epic: { select: { name: true, color: true } },
 } as const;
 
+// The backlog page plans remaining work: finished issues stay on the board
+// and sprint pages, and are only counted here.
+const notDone = { status: { not: "DONE" as const } };
+
 export default async function BacklogPage({ params }: BacklogPageProps) {
   const { projectId } = await params;
 
-  const [projects, project, sprints, backlogIssues] = await Promise.all([
+  const [projects, project, sprints, backlogIssues, doneCounts] = await Promise.all([
     getProjects(),
     prisma.project.findUnique({
       where: { id: projectId },
@@ -34,15 +38,25 @@ export default async function BacklogPage({ params }: BacklogPageProps) {
     }),
     prisma.sprint.findMany({
       where: { projectId, status: { in: ["ACTIVE", "PLANNED"] } },
-      include: { issues: { select: issueRowSelect, orderBy: issueOrder } },
+      include: { issues: { where: notDone, select: issueRowSelect, orderBy: issueOrder } },
       orderBy: { number: "asc" },
     }),
     prisma.issue.findMany({
-      where: { projectId, sprintId: null },
+      where: { projectId, sprintId: null, ...notDone },
       select: issueRowSelect,
       orderBy: issueOrder,
     }),
+    // DONE issues per sprint (null = backlog).
+    prisma.issue.groupBy({
+      by: ["sprintId"],
+      where: { projectId, status: "DONE" },
+      _count: { _all: true },
+    }),
   ]);
+
+  const doneIn = (sprintId: string | null) =>
+    doneCounts.find((row) => row.sprintId === sprintId)?._count._all ?? 0;
+  const withDone = sprints.map((sprint) => ({ ...sprint, doneCount: doneIn(sprint.id) }));
 
   if (!project) notFound();
 
@@ -59,9 +73,10 @@ export default async function BacklogPage({ params }: BacklogPageProps) {
     >
       <BacklogView
         projectId={projectId}
-        activeSprint={sprints.find((s) => s.status === "ACTIVE") ?? null}
-        plannedSprints={sprints.filter((s) => s.status === "PLANNED")}
+        activeSprint={withDone.find((s) => s.status === "ACTIVE") ?? null}
+        plannedSprints={withDone.filter((s) => s.status === "PLANNED")}
         backlogIssues={backlogIssues}
+        backlogDoneCount={doneIn(null)}
       />
     </AppShell>
   );
