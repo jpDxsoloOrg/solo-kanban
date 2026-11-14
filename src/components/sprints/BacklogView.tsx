@@ -21,22 +21,31 @@ import {
   sprintStatusLabel,
 } from "./sprint-ui";
 
-export type BacklogSprint = Sprint & { issues: IssueRowIssue[] };
+/** A sprint with its unfinished issues; `doneCount` counts the DONE ones left out. */
+export type BacklogSprint = Sprint & { issues: IssueRowIssue[]; doneCount: number };
 
 export interface BacklogViewProps {
   projectId: string;
   activeSprint: BacklogSprint | null;
   /** Planned sprints, oldest first, with their issues. */
   plannedSprints: BacklogSprint[];
-  /** Unplanned issues (sprintId = null). */
+  /** Unfinished unplanned issues (sprintId = null). */
   backlogIssues: IssueRowIssue[];
+  /** DONE issues in the backlog, which aren't listed. */
+  backlogDoneCount: number;
 }
 
 /**
  * Sprint planning: the active sprint, each planned sprint and the backlog,
  * with per-issue "Move to" controls and planned-sprint actions.
  */
-export function BacklogView({ projectId, activeSprint, plannedSprints, backlogIssues }: BacklogViewProps) {
+export function BacklogView({
+  projectId,
+  activeSprint,
+  plannedSprints,
+  backlogIssues,
+  backlogDoneCount,
+}: BacklogViewProps) {
   const router = useRouter();
   const [creating, setCreating] = useState(false);
   const [editing, setEditing] = useState<Sprint | null>(null);
@@ -199,9 +208,7 @@ export function BacklogView({ projectId, activeSprint, plannedSprints, backlogIs
             <h2 id="backlog-heading" className="text-base font-semibold text-foreground">
               Backlog
             </h2>
-            <span className="text-xs text-muted-foreground">
-              {pluralize(backlogIssues.length, "issue")}
-            </span>
+            <IssueCount open={backlogIssues.length} done={backlogDoneCount} />
             <SelectAll issues={backlogIssues} selection={selection} label="Backlog" />
           </div>
           {backlogIssues.length > 0 ? (
@@ -219,7 +226,9 @@ export function BacklogView({ projectId, activeSprint, plannedSprints, backlogIs
             </ul>
           ) : (
             <p className="px-4 py-6 text-center text-sm text-muted-foreground">
-              The backlog is empty. Add ideas here and plan them into a sprint later.
+              {backlogDoneCount > 0
+                ? "Nothing left to do in the backlog. Add ideas here and plan them into a sprint later."
+                : "The backlog is empty. Add ideas here and plan them into a sprint later."}
             </p>
           )}
           <AddBacklogIssue projectId={projectId} />
@@ -246,7 +255,7 @@ export function BacklogView({ projectId, activeSprint, plannedSprints, backlogIs
         open={starting !== null}
         onClose={() => setStarting(null)}
         projectId={projectId}
-        sprint={starting && { ...starting, _count: { issues: starting.issues.length } }}
+        sprint={starting && { ...starting, _count: { issues: starting.issues.length + starting.doneCount } }}
       />
       <AlertDialog
         open={deleting !== null}
@@ -256,8 +265,8 @@ export function BacklogView({ projectId, activeSprint, plannedSprints, backlogIs
         onConfirm={handleDelete}
         title={deleting ? `Delete ${deleting.name}?` : "Delete sprint?"}
         description={
-          deleting && deleting.issues.length > 0
-            ? `Its ${pluralize(deleting.issues.length, "issue")} will go back to the backlog. This can't be undone.`
+          deleting && deleting.issues.length + deleting.doneCount > 0
+            ? `Its ${pluralize(deleting.issues.length + deleting.doneCount, "issue")} will go back to the backlog. This can't be undone.`
             : "This sprint has no issues. This can't be undone."
         }
         confirmLabel="Delete sprint"
@@ -265,6 +274,21 @@ export function BacklogView({ projectId, activeSprint, plannedSprints, backlogIs
         className="w-[calc(100%-2rem)]"
       />
     </div>
+  );
+}
+
+/** "3 issues · 2 done": DONE issues are counted but not listed on this page. */
+function IssueCount({ open, done }: { open: number; done: number }) {
+  return (
+    <span className="text-xs text-muted-foreground">
+      {pluralize(open, done > 0 ? "open issue" : "issue")}
+      {done > 0 && (
+        <span title="Done issues aren't listed in the backlog. See the board or the sprint page.">
+          {" · "}
+          {done} done
+        </span>
+      )}
+    </span>
   );
 }
 
@@ -456,7 +480,7 @@ function SprintSection({
             <span className={`${chipClass} rounded-full ${sprintStatusClass[sprint.status]}`}>
               {sprintStatusLabel[sprint.status]}
             </span>
-            <span className="text-xs text-muted-foreground">{pluralize(sprint.issues.length, "issue")}</span>
+            <IssueCount open={sprint.issues.length} done={sprint.doneCount} />
             <SelectAll issues={sprint.issues} selection={selection} label={sprint.name} />
           </div>
           <p className="mt-0.5 flex flex-wrap gap-x-2 text-xs text-muted-foreground">
@@ -493,7 +517,9 @@ function SprintSection({
           ))}
         </ul>
       ) : (
-        <p className="px-4 py-5 text-center text-sm text-muted-foreground">{emptyText}</p>
+        <p className="px-4 py-5 text-center text-sm text-muted-foreground">
+          {sprint.doneCount > 0 ? "Everything in this sprint is done." : emptyText}
+        </p>
       )}
     </section>
   );
