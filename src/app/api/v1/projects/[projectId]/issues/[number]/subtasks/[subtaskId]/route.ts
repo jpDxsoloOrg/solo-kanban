@@ -3,7 +3,7 @@ import {
   allowOnly, apiRoute, badRequest, booleanField, noContent, notFound, ok, parseIssueNumber, readBody,
   revalidateProject, stringField,
 } from "@/lib/api/http";
-import { MAX_SUBTASK_TITLE_LENGTH, requireIssueId, subtaskJson } from "@/lib/api/resources";
+import { MAX_SUBTASK_DESCRIPTION_LENGTH, MAX_SUBTASK_TITLE_LENGTH, requireIssueId, subtaskJson } from "@/lib/api/resources";
 
 export const dynamic = "force-dynamic";
 
@@ -15,16 +15,17 @@ async function requireSubtask({ projectId, number, subtaskId }: Params) {
   if (!subtask || subtask.issueId !== issueId) throw notFound("Subtask");
 }
 
-/** Rename a subtask or check/uncheck it. */
+/** Rename a subtask, change its description, or check/uncheck it. */
 export const PATCH = apiRoute<Params>(async (req, params) => {
   await requireSubtask(params);
   const body = await readBody(req);
-  allowOnly(body, ["title", "completed"]);
+  allowOnly(body, ["title", "description", "completed"]);
   const title = stringField(body, "title", { max: MAX_SUBTASK_TITLE_LENGTH });
+  const description = stringField(body, "description", { max: MAX_SUBTASK_DESCRIPTION_LENGTH, nullable: true });
   const completed = booleanField(body, "completed");
-  if (title === undefined && completed === undefined) throw badRequest("Nothing to update.");
+  if (title === undefined && description === undefined && completed === undefined) throw badRequest("Nothing to update.");
 
-  const subtask = await prisma.subtask.update({ where: { id: params.subtaskId }, data: { title, completed } });
+  const subtask = await prisma.subtask.update({ where: { id: params.subtaskId }, data: { title, description, completed } });
   revalidateProject(params.projectId);
   return ok(subtaskJson(subtask));
 });

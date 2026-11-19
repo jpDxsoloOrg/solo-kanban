@@ -110,6 +110,7 @@ model Issue {
 model Subtask {
   id          String   @id @default(cuid())
   title       String
+  description String?
   completed   Boolean  @default(false)
   order       Int      @default(0)
   createdAt   DateTime @default(now())

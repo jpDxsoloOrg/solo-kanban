@@ -7,6 +7,7 @@ import {
   MAX_ISSUE_TITLE_LENGTH,
   MAX_PROJECT_DESCRIPTION_LENGTH,
   MAX_PROJECT_NAME_LENGTH,
+  MAX_SUBTASK_DESCRIPTION_LENGTH,
   MAX_SUBTASK_TITLE_LENGTH,
   SPRINT_STATUSES,
 } from "@/lib/api/resources";
@@ -262,7 +263,8 @@ export function buildOpenApiSpec() {
               required: ["title"],
               additionalProperties: false,
               properties: {
-                title: str({ maxLength: MAX_SUBTASK_TITLE_LENGTH }),
+                title: str({ maxLength: MAX_SUBTASK_TITLE_LENGTH, description: "A short title." }),
+                description: nullable(str({ maxLength: MAX_SUBTASK_DESCRIPTION_LENGTH, description: "Optional longer markdown description." })),
                 completed: { type: "boolean", default: false },
               },
             }),
@@ -273,13 +275,17 @@ export function buildOpenApiSpec() {
         parameters: [projectId, issueNumber, param("subtaskId", "Subtask id.")],
         patch: op(
           "Subtasks",
-          "Rename or check/uncheck a subtask",
+          "Rename, describe or check/uncheck a subtask",
           { 200: { description: "Updated.", content: dataOf(ref("Subtask")) }, ...errors(400, 404) },
           {
             requestBody: body({
               type: "object",
               additionalProperties: false,
-              properties: { title: str({ maxLength: MAX_SUBTASK_TITLE_LENGTH }), completed: { type: "boolean" } },
+              properties: {
+                title: str({ maxLength: MAX_SUBTASK_TITLE_LENGTH }),
+                description: nullable(str({ maxLength: MAX_SUBTASK_DESCRIPTION_LENGTH, description: "Markdown. null or an empty string clears it." })),
+                completed: { type: "boolean" },
+              },
             }),
           },
         ),
@@ -456,7 +462,15 @@ export function buildOpenApiSpec() {
         },
         Subtask: {
           type: "object",
-          properties: { id: str(), title: str(), completed: { type: "boolean" }, order: { type: "integer" }, createdAt: dateTime, updatedAt: dateTime },
+          properties: {
+            id: str(),
+            title: str(),
+            description: nullable(str({ description: "Markdown; null when the subtask has none." })),
+            completed: { type: "boolean" },
+            order: { type: "integer" },
+            createdAt: dateTime,
+            updatedAt: dateTime,
+          },
         },
         Comment: {
           type: "object",
