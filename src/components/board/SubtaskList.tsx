@@ -2,8 +2,14 @@
 
 import { useState, useRef, useMemo } from "react";
 import type { Subtask } from "@prisma/client";
-import { toggleSubtask, addSubtask, deleteSubtask } from "@/actions/subtask-actions";
-import { Button, Checkbox, Input } from "@dxsolo/ui";
+import {
+  toggleSubtask,
+  addSubtask,
+  deleteSubtask,
+  updateSubtaskDescription,
+} from "@/actions/subtask-actions";
+import { Button, Checkbox, Input, Textarea } from "@dxsolo/ui";
+import { MarkdownPreview } from "./MarkdownPreview";
 import { holdLiveRefresh } from "@/components/live/live-refresh-hold";
 import { useServerState } from "@/components/live/useServerState";
 
@@ -26,6 +32,8 @@ export function SubtaskList({ issueId, subtasks: serverSubtasks }: SubtaskListPr
     saving > 0
   );
   const [newTitle, setNewTitle] = useState("");
+  const [newDescription, setNewDescription] = useState("");
+  const [showNewDescription, setShowNewDescription] = useState(false);
   const [isAdding, setIsAdding] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -75,9 +83,14 @@ export function SubtaskList({ issueId, subtasks: serverSubtasks }: SubtaskListPr
     setIsAdding(true);
     setError(null);
     try {
-      const created = await trackSave(() => addSubtask(issueId, trimmed, subtasks.length));
+      const description = showNewDescription ? newDescription : null;
+      const created = await trackSave(() =>
+        addSubtask(issueId, trimmed, subtasks.length, description)
+      );
       setSubtasks((prev) => (prev.some((s) => s.id === created.id) ? prev : [...prev, created]));
       setNewTitle("");
+      setNewDescription("");
+      setShowNewDescription(false);
       inputRef.current?.focus();
     } catch (err) {
       console.error("Failed to add subtask:", err);
@@ -98,6 +111,22 @@ export function SubtaskList({ issueId, subtasks: serverSubtasks }: SubtaskListPr
       console.error("Failed to delete subtask:", err);
       setSubtasks(previous);
       setError("Couldn't delete the subtask. Please try again.");
+    }
+  };
+
+  /** Saves a subtask's description; resolves false (and shows an error) on failure. */
+  const handleSaveDescription = async (subtaskId: string, description: string) => {
+    setError(null);
+    try {
+      const updated = await trackSave(() => updateSubtaskDescription(subtaskId, description));
+      setSubtasks((prev) =>
+        prev.map((s) => (s.id === subtaskId ? { ...s, description: updated.description } : s))
+      );
+      return true;
+    } catch (err) {
+      console.error("Failed to save subtask description:", err);
+      setError("Couldn't save the description. Please try again.");
+      return false;
     }
   };
 
@@ -133,27 +162,13 @@ export function SubtaskList({ issueId, subtasks: serverSubtasks }: SubtaskListPr
       {/* Subtask items */}
       <div className="flex flex-col gap-1">
         {subtasks.map((subtask) => (
-          <div
+          <SubtaskItem
             key={subtask.id}
-            className="group -mx-2 flex min-h-10 items-center gap-2 rounded px-2 py-1 hover:bg-muted pointer-fine:min-h-8"
-          >
-            <div className="min-w-0 flex-1 wrap-anywhere">
-              <Checkbox
-                checked={subtask.completed}
-                onChange={(e) => handleToggle(subtask.id, e.target.checked)}
-                label={subtask.title}
-                className={`shrink-0 ${subtask.completed ? "opacity-50" : ""}`}
-              />
-            </div>
-            <button
-              type="button"
-              onClick={() => handleDelete(subtask.id)}
-              className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded text-xs text-muted-foreground transition-opacity hover:text-destructive focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring pointer-fine:h-7 pointer-fine:w-7 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100"
-              aria-label={`Delete subtask: ${subtask.title}`}
-            >
-              ✕
-            </button>
-          </div>
+            subtask={subtask}
+            onToggle={(checked) => handleToggle(subtask.id, checked)}
+            onDelete={() => handleDelete(subtask.id)}
+            onSaveDescription={(description) => handleSaveDescription(subtask.id, description)}
+          />
         ))}
       </div>
 
@@ -185,6 +200,189 @@ export function SubtaskList({ issueId, subtasks: serverSubtasks }: SubtaskListPr
           {isAdding ? "Adding..." : "Add"}
         </Button>
       </div>
+      {showNewDescription ? (
+        <Textarea
+          value={newDescription}
+          onChange={(e) => setNewDescription(e.target.value)}
+          placeholder="Description (optional, supports markdown)"
+          aria-label="New subtask description"
+          disabled={isAdding}
+          maxLength={MAX_DESCRIPTION_LENGTH}
+          className="mt-2 min-h-[96px] font-mono"
+        />
+      ) : (
+        <button
+          type="button"
+          onClick={() => setShowNewDescription(true)}
+          className="mt-1 rounded text-xs text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          + Add a description
+        </button>
+      )}
+    </div>
+  );
+}
+
+/** Same cap as the server (MAX_SUBTASK_DESCRIPTION_LENGTH). */
+const MAX_DESCRIPTION_LENGTH = 20_000;
+
+interface SubtaskItemProps {
+  subtask: Subtask;
+  onToggle: (checked: boolean) => void;
+  onDelete: () => void;
+  /** Resolves true once saved. */
+  onSaveDescription: (description: string) => Promise<boolean>;
+}
+
+/**
+ * One checklist row. The title stays short; a subtask with a description
+ * shows a quiet notes icon, and opening the row shows the description as
+ * markdown with an editor.
+ */
+function SubtaskItem({ subtask, onToggle, onDelete, onSaveDescription }: SubtaskItemProps) {
+  const hasDescription = Boolean(subtask.description);
+  const [open, setOpen] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState("");
+  const [savingDescription, setSavingDescription] = useState(false);
+
+  const startEditing = () => {
+    setDraft(subtask.description ?? "");
+    setEditing(true);
+  };
+
+  const handleToggleOpen = () => {
+    if (open) {
+      setOpen(false);
+      setEditing(false);
+      return;
+    }
+    setOpen(true);
+    // Nothing to read yet: go straight to writing one.
+    if (!hasDescription) startEditing();
+  };
+
+  const handleSave = async () => {
+    setSavingDescription(true);
+    const saved = await onSaveDescription(draft);
+    setSavingDescription(false);
+    if (!saved) return;
+    setEditing(false);
+    if (!draft.trim()) setOpen(false);
+  };
+
+  const handleCancel = () => {
+    setEditing(false);
+    if (!hasDescription) setOpen(false);
+  };
+
+  const panelId = `subtask-description-${subtask.id}`;
+
+  return (
+    <div>
+      <div className="group -mx-2 flex min-h-10 items-center gap-2 rounded px-2 py-1 hover:bg-muted pointer-fine:min-h-8">
+        <div className="min-w-0 flex-1 wrap-anywhere">
+          <Checkbox
+            checked={subtask.completed}
+            onChange={(e) => onToggle(e.target.checked)}
+            label={subtask.title}
+            className={`shrink-0 ${subtask.completed ? "opacity-50" : ""}`}
+          />
+        </div>
+        <button
+          type="button"
+          onClick={handleToggleOpen}
+          aria-expanded={open}
+          aria-controls={open ? panelId : undefined}
+          title={hasDescription ? (open ? "Hide description" : "Show description") : "Add a description"}
+          aria-label={`${hasDescription ? (open ? "Hide" : "Show") : "Add"} description: ${subtask.title}`}
+          className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded text-muted-foreground transition-opacity hover:text-foreground focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring pointer-fine:h-7 pointer-fine:w-7 ${
+            hasDescription || open
+              ? subtask.completed
+                ? "opacity-50"
+                : "opacity-70"
+              : "[@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100"
+          }`}
+        >
+          <svg
+            aria-hidden="true"
+            viewBox="0 0 16 16"
+            className="h-3.5 w-3.5"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            strokeLinecap="round"
+          >
+            {hasDescription ? (
+              <path d="M3 4h10M3 8h10M3 12h6" />
+            ) : (
+              <path d="M8 3.5v9M3.5 8h9" />
+            )}
+          </svg>
+        </button>
+        <button
+          type="button"
+          onClick={onDelete}
+          className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded text-xs text-muted-foreground transition-opacity hover:text-destructive focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring pointer-fine:h-7 pointer-fine:w-7 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100"
+          aria-label={`Delete subtask: ${subtask.title}`}
+        >
+          ✕
+        </button>
+      </div>
+
+      {open && (
+        <div id={panelId} className="mb-2 ml-6 mt-1 border-l-2 border-border pl-3">
+          {editing ? (
+            <div className="flex flex-col gap-2">
+              <Textarea
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Escape") {
+                    e.stopPropagation();
+                    handleCancel();
+                  } else if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    void handleSave();
+                  }
+                }}
+                placeholder="Add a description... (supports markdown)"
+                aria-label={`Description for ${subtask.title}`}
+                disabled={savingDescription}
+                maxLength={MAX_DESCRIPTION_LENGTH}
+                autoFocus
+                className="min-h-[120px] font-mono"
+              />
+              <div className="flex justify-end gap-2">
+                <Button intent="ghost" size="sm" onClick={handleCancel} disabled={savingDescription}>
+                  Cancel
+                </Button>
+                <Button size="sm" onClick={() => void handleSave()} disabled={savingDescription}>
+                  {savingDescription ? "Saving..." : "Save"}
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <div className="flex flex-col gap-1">
+              {subtask.description ? (
+                <MarkdownPreview content={subtask.description} />
+              ) : (
+                <p className="text-sm text-muted-foreground">No description</p>
+              )}
+              <div>
+                <button
+                  type="button"
+                  onClick={startEditing}
+                  className="rounded text-xs text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  Edit description
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

@@ -1,9 +1,9 @@
 import { prisma } from "@/lib/prisma";
 import {
   allowOnly, apiRoute, booleanField, created, ok, parseIssueNumber, readBody, requireString,
-  revalidateProject,
+  revalidateProject, stringField,
 } from "@/lib/api/http";
-import { MAX_SUBTASK_TITLE_LENGTH, requireIssueId, subtaskJson } from "@/lib/api/resources";
+import { MAX_SUBTASK_DESCRIPTION_LENGTH, MAX_SUBTASK_TITLE_LENGTH, requireIssueId, subtaskJson } from "@/lib/api/resources";
 
 export const dynamic = "force-dynamic";
 
@@ -19,13 +19,14 @@ export const GET = apiRoute<Params>(async (_req, { projectId, number }) => {
 export const POST = apiRoute<Params>(async (req, { projectId, number }) => {
   const issueId = await requireIssueId(projectId, parseIssueNumber(number));
   const body = await readBody(req);
-  allowOnly(body, ["title", "completed"]);
+  allowOnly(body, ["title", "description", "completed"]);
   const title = requireString(body, "title", { max: MAX_SUBTASK_TITLE_LENGTH });
+  const description = stringField(body, "description", { max: MAX_SUBTASK_DESCRIPTION_LENGTH, nullable: true }) ?? null;
   const completed = booleanField(body, "completed") ?? false;
 
   const last = await prisma.subtask.aggregate({ where: { issueId }, _max: { order: true } });
   const subtask = await prisma.subtask.create({
-    data: { issueId, title, completed, order: (last._max.order ?? -1) + 1 },
+    data: { issueId, title, description, completed, order: (last._max.order ?? -1) + 1 },
   });
   revalidateProject(projectId);
   return created(subtaskJson(subtask));

@@ -20,6 +20,7 @@ export const MAX_ISSUE_TITLE_LENGTH = 500;
 export const MAX_ISSUE_DESCRIPTION_LENGTH = 100_000;
 export const MAX_EPIC_NAME_LENGTH = 200;
 export const MAX_SUBTASK_TITLE_LENGTH = 500;
+export const MAX_SUBTASK_DESCRIPTION_LENGTH = 20_000;
 
 const HEX_COLOR_RE = /^#[0-9a-f]{6}$/i;
 
@@ -110,6 +111,7 @@ export function subtaskJson(subtask: Subtask) {
   return {
     id: subtask.id,
     title: subtask.title,
+    description: subtask.description,
     completed: subtask.completed,
     order: subtask.order,
     createdAt: subtask.createdAt,
