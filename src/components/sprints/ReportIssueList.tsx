@@ -1,18 +1,17 @@
 "use client";
 
 import { IssueRow, type IssueRowIssue } from "./IssueRow";
-import { useShowSubtasks, visibleIssues } from "@/components/board/subtask-visibility";
 
 interface ReportIssueListProps {
   issues: IssueRowIssue[];
-  /** Every issue in the report, to tell whether a subtask's parent is listed. */
+  /** Every issue in the report (unused now that subtasks never show; kept for callers). */
   all: IssueRowIssue[];
   projectId: string;
 }
 
-/** A sprint report's issue list, following the "Show subtasks" setting. */
-export function ReportIssueList({ issues, all, projectId }: ReportIssueListProps) {
-  const shown = visibleIssues(issues, useShowSubtasks(), all);
+/** A sprint report's issue list: top-level issues only (subtasks never show here). */
+export function ReportIssueList({ issues, projectId }: ReportIssueListProps) {
+  const shown = issues.filter((issue) => issue.parentId === null);
   if (shown.length === 0) {
     return (
       <p className="rounded-lg border border-dashed border-border px-4 py-3 text-sm text-muted-foreground">

@@ -217,11 +217,11 @@ class Api {
 
   async listAll<T>(path: string): Promise<T[]> {
     const all: T[] = [];
-    for (let offset = 0; ; offset += 500) {
+    for (let offset = 0; ; offset += 50) {
       const sep = path.includes("?") ? "&" : "?";
-      const page = await this.request<T[]>("GET", `${path}${sep}limit=500&offset=${offset}`);
+      const page = await this.request<T[]>("GET", `${path}${sep}limit=50&offset=${offset}`);
       all.push(...page);
-      if (page.length < 500) return all;
+      if (page.length < 50) return all;
     }
   }
 }
@@ -258,6 +258,21 @@ function childStatus(parent: ApiIssue, subtask: ApiSubtask, opts: Options): Stat
   if (!isArchived(parent)) return "OPEN";
   if (opts.untickedUnderDone === "skip") return null;
   return opts.untickedUnderDone === "done" ? "DONE" : "OPEN";
+}
+
+/** Child issue fields for a subtask. Titles over 90 characters are shortened at a word
+ *  boundary; the full original title then leads the description so nothing is lost. */
+const TITLE_MAX = 90;
+function childFields(subtask: { title: string; description?: string | null }): { title: string; description: string | null } {
+  const full = subtask.title.trim();
+  if (full.length <= TITLE_MAX) return { title: full, description: subtask.description ?? null };
+  const flat = full.replace(/\s+/g, " ");
+  let cut = flat.slice(0, TITLE_MAX - 1);
+  const space = cut.lastIndexOf(" ");
+  if (space > 40) cut = cut.slice(0, space);
+  const title = cut.replace(/[\s,;:.(\-`*]+$/, "") + "…";
+  const description = subtask.description ? `${full}\n\n${subtask.description}` : full;
+  return { title, description };
 }
 
 async function projectIds(api: Api, opts: Options): Promise<string[]> {
@@ -313,7 +328,7 @@ async function convert(api: Api, opts: Options, state: StateFile) {
           continue;
         }
 
-        const orphanIndex = adoptable.findIndex((child) => child.title === subtask.title.trim());
+        const orphanIndex = adoptable.findIndex((child) => child.title === childFields(subtask).title);
         if (orphanIndex !== -1) {
           const [orphan] = adoptable.splice(orphanIndex, 1);
           state.entries[subtask.id] = {
@@ -328,8 +343,7 @@ async function convert(api: Api, opts: Options, state: StateFile) {
 
         try {
           const child = await api.request<ApiIssue>("POST", `/projects/${projectId}/issues`, {
-            title: subtask.title,
-            description: subtask.description ?? null,
+            ...childFields(subtask),
             status,
             priority: parent.priority,
             parentNumber: parent.number,
@@ -390,8 +404,8 @@ async function verifyOrDelete(api: Api, opts: Options, state: StateFile, remove:
           if (child.parent?.number !== parent.number) {
             problems.push(`child #${child.number}'s parent is ${child.parent ? `#${child.parent.number}` : "none"}`);
           }
-          if (child.title !== subtask.title.trim()) problems.push(`title differs ("${child.title}")`);
-          if (!sameText(child.description, subtask.description)) problems.push("description differs");
+          if (child.title !== childFields(subtask).title && child.title !== subtask.title.trim()) problems.push(`title differs ("${child.title}")`);
+          if (!sameText(child.description, subtask.description) && !sameText(child.description, childFields(subtask).description)) problems.push("description differs");
         }
         if (problems.length > 0) {
           totals.mismatched++;

@@ -4,7 +4,6 @@ import { daysRemaining, formatSprintRangeWithYear, toDateInputValue } from "@/li
 import { DaysLeft } from "./DaysLeft";
 import type { IssueRowIssue } from "./IssueRow";
 import { ReportIssueList } from "./ReportIssueList";
-import { ShowSubtasksToggle } from "@/components/board/subtask-visibility";
 import { LocalDate } from "@/components/common/LocalDate";
 import { ProgressBar } from "./ProgressBar";
 import {
@@ -42,6 +41,8 @@ interface BreakdownRow {
 export function SprintReport({ sprint, projectId, issues }: SprintReportProps) {
   const isCompleted = sprint.status === "COMPLETED";
   const total = issues.length;
+  /** Issues listed in the report: top-level only, subtasks never show here. */
+  const listed = issues.filter((issue) => issue.parentId === null).length;
   const done = issues.filter((issue) => issue.status === "DONE").length;
   const range = formatSprintRangeWithYear(sprint.startDate, sprint.endDate);
   const lengthDays =
@@ -157,11 +158,10 @@ export function SprintReport({ sprint, projectId, issues }: SprintReportProps) {
           <div className="flex flex-wrap items-center justify-between gap-2">
             <h2 id="report-issues-heading" className="text-base font-semibold text-foreground">
               {isCompleted ? "Completed issues" : "Issues"}{" "}
-              <span className="font-normal text-muted-foreground">({total})</span>
+              <span className="font-normal text-muted-foreground">({listed})</span>
             </h2>
-            {issues.some((issue) => issue.parentId !== null) && <ShowSubtasksToggle />}
           </div>
-          {total === 0 ? (
+          {listed === 0 ? (
             <p className="rounded-lg border border-dashed border-border px-4 py-6 text-center text-sm text-muted-foreground">
               {isCompleted
                 ? "No issues were completed in this sprint."

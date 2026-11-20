@@ -13,12 +13,6 @@ import { IssueRow, type IssueRowIssue, type MoveTarget } from "./IssueRow";
 import { SprintFormModal } from "./SprintFormModal";
 import { StartSprintDialog } from "./StartSprintDialog";
 import {
-  hasSubtasks,
-  ShowSubtasksToggle,
-  useShowSubtasks,
-  visibleIssues,
-} from "@/components/board/subtask-visibility";
-import {
   chipClass,
   focusRingClass,
   nativeSelectClass,
@@ -53,15 +47,9 @@ export function BacklogView({
   backlogDoneCount,
 }: BacklogViewProps) {
   const router = useRouter();
-  // Subtasks listed on this page next to their parent are hidden unless
-  // "Show subtasks" is on (the parent's row counts them).
-  const showSubtasks = useShowSubtasks();
-  const everyIssue = [
-    ...(allActiveSprint?.issues ?? []),
-    ...allPlannedSprints.flatMap((sprint) => sprint.issues),
-    ...allBacklogIssues,
-  ];
-  const shown = (issues: IssueRowIssue[]) => visibleIssues(issues, showSubtasks, everyIssue);
+  // Planning lists top-level issues only: subtasks never appear here (the
+  // parent's row counts them). They show on the board with "Show subtasks".
+  const shown = (issues: IssueRowIssue[]) => issues.filter((issue) => issue.parentId === null);
   const activeSprint = allActiveSprint && { ...allActiveSprint, issues: shown(allActiveSprint.issues) };
   const plannedSprints = allPlannedSprints.map((sprint) => ({ ...sprint, issues: shown(sprint.issues) }));
   const backlogIssues = shown(allBacklogIssues);
@@ -140,7 +128,6 @@ export function BacklogView({
           <div className="flex items-center justify-between gap-3">
             <h1 className="text-xl font-semibold text-foreground">Backlog</h1>
             <div className="flex items-center gap-2">
-              {hasSubtasks(everyIssue) && <ShowSubtasksToggle />}
               <Button intent="primary" onClick={() => setCreating(true)}>
                 New sprint
               </Button>
