@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { AppShell } from "@/components/layout/AppShell";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { SprintReport } from "@/components/sprints/SprintReport";
+import { issueRowSelect } from "@/lib/issue-include";
 import { getProjects } from "@/actions/project-actions";
 
 interface SprintReportPageProps {
@@ -22,16 +23,7 @@ export default async function SprintReportPage({ params }: SprintReportPageProps
       where: { id: sprintId },
       include: {
         issues: {
-          select: {
-            id: true,
-            number: true,
-            title: true,
-            status: true,
-            priority: true,
-            sprintId: true,
-            epicId: true,
-            epic: { select: { name: true, color: true } },
-          },
+          select: { ...issueRowSelect, epicId: true },
           // Postgres sorts the IssueStatus enum in declaration order.
           orderBy: [{ status: "asc" }, { order: "asc" }, { number: "asc" }],
         },

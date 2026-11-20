@@ -70,6 +70,14 @@ const query = (name: string, description: string, schema: Schema = str()) => ({
   schema,
 });
 
+const skipAutoMoveHeader = {
+  name: "X-Skip-Parent-Auto-Move",
+  in: "header",
+  required: false,
+  description: "`true` to leave parent issues' statuses alone for this request (used when converting checklists).",
+  schema: { type: "string", enum: ["true", "false"] },
+};
+
 const sprintRef = str({
   description: 'A sprint id, `"active"` for the active sprint, or null for the backlog.',
 });
@@ -89,6 +97,13 @@ export function buildOpenApiSpec() {
         "",
         "**Responses:** successes are `{ \"data\": ... }`; errors are `{ \"error\": { \"code\", \"message\" } }`.",
         "Issues are addressed by their per-project **number**. Enum values are case-insensitive on input.",
+        "",
+        "**Subtasks are child issues.** A child issue is a full issue (number, status, comments…) linked to a parent " +
+          "with `parentNumber`. One level only. New children inherit the parent's sprint and epic; moving a parent " +
+          "to another sprint takes its unfinished children along. When a child starts (leaves Open) an Open parent " +
+          "moves to In progress, and when every child is Done the parent moves to Review; parents never move " +
+          "backwards. Send `X-Skip-Parent-Auto-Move: true` to turn that off for one request. The older checklist " +
+          "`subtasks` (the *Subtasks (legacy checklist)* endpoints) still work while they are converted.",
       ].join("\n"),
     },
     servers: [{ url: "/api/v1" }],
@@ -97,7 +112,7 @@ export function buildOpenApiSpec() {
       { name: "Projects" },
       { name: "Issues" },
       { name: "Comments" },
-      { name: "Subtasks" },
+      { name: "Subtasks", description: "Legacy checklist items. New work uses child issues (`parentNumber`)." },
       { name: "Epics" },
       { name: "Sprints" },
     ],
@@ -161,6 +176,14 @@ export function buildOpenApiSpec() {
               query("sprint", '`"active"`, `"backlog"` or a sprint id.'),
               query("epicId", 'An epic id, or `"none"` for issues without an epic.'),
               query("q", "Case-insensitive text to find in titles."),
+              query("parent", "An issue number: only that issue's child issues, in child order.", { type: "integer", minimum: 1 }),
+              query("topLevel", "`true`: only issues that aren't child issues.", { type: "boolean" }),
+              query(
+                "includeChildren",
+                "With `topLevel=true`: follow each matching issue by all of its children (in child order, " +
+                  "ignoring the other filters). Pagination counts top-level issues.",
+                { type: "boolean" },
+              ),
               query("limit", "Page size (max 500).", { type: "integer", minimum: 0, maximum: 500, default: 100 }),
               query("offset", "Issues to skip.", { type: "integer", minimum: 0, default: 0 }),
             ],
@@ -171,6 +194,7 @@ export function buildOpenApiSpec() {
           "Create an issue",
           { 201: { description: "Created, at the end of its column.", content: dataOf(ref("Issue")) }, ...errors(400, 404, 409) },
           {
+            parameters: [skipAutoMoveHeader],
             requestBody: body({
               type: "object",
               required: ["title"],
@@ -181,7 +205,23 @@ export function buildOpenApiSpec() {
                 status: { ...ref("IssueStatus"), default: "OPEN" },
                 priority: { ...ref("IssuePriority"), default: "MEDIUM" },
                 epicId: nullable(str()),
-                sprintId: nullable({ ...sprintRef, description: sprintRef.description + " Defaults to the backlog." }),
+                sprintId: nullable({
+                  ...sprintRef,
+                  description: sprintRef.description + " Defaults to the backlog, or to the parent's sprint for a child issue.",
+                }),
+                parentNumber: nullable({
+                  type: "integer",
+                  minimum: 1,
+                  description:
+                    "Make this a child issue (subtask) of the issue with this number. It inherits the parent's sprint " +
+                    "and epic unless `sprintId`/`epicId` are sent. A finished (DONE) child of a parent archived with a " +
+                    "completed sprint joins that sprint; an unfinished one starts in the backlog.",
+                }),
+                childOrder: {
+                  type: "integer",
+                  minimum: 0,
+                  description: "Position among the parent's children (0-based). Defaults to the end.",
+                },
               },
             }),
           },
@@ -192,10 +232,14 @@ export function buildOpenApiSpec() {
         get: op("Issues", "Get an issue", { 200: { description: "The issue.", content: dataOf(ref("Issue")) }, ...errors(404) }),
         patch: op(
           "Issues",
-          "Update an issue (title, description, status, priority, epic, sprint)",
+          "Update an issue (title, description, status, priority, epic, sprint, parent)",
           { 200: { description: "Updated.", content: dataOf(ref("Issue")) }, ...errors(400, 404, 409) },
           {
-            description: "Send only the fields to change. A status change moves the issue to the end of its new column.",
+            description:
+              "Send only the fields to change. A status change moves the issue to the end of its new column. " +
+              "Moving a parent to another sprint (or the backlog) takes its unfinished children along. A child's " +
+              "status change can move its parent forward (see the API description).",
+            parameters: [skipAutoMoveHeader],
             requestBody: body({
               type: "object",
               additionalProperties: false,
@@ -206,12 +250,31 @@ export function buildOpenApiSpec() {
                 priority: ref("IssuePriority"),
                 epicId: nullable(str({ description: "null removes the epic." })),
                 sprintId: nullable(sprintRef),
+                parentNumber: nullable({
+                  type: "integer",
+                  minimum: 1,
+                  description: "Make this a child of that issue (appended to its children), or null to make it top-level.",
+                }),
+                childOrder: { type: "integer", minimum: 0, description: "Move this child to that position (0-based) among its siblings." },
               },
               example: { status: "IN_PROGRESS" },
             }),
           },
         ),
-        delete: op("Issues", "Delete an issue", { 204: { description: "Deleted." }, ...errors(404) }),
+        delete: op(
+          "Issues",
+          "Delete an issue",
+          { 204: { description: "Deleted." }, ...errors(400, 404, 409) },
+          {
+            description:
+              "An issue with child issues is only deleted with `children=detach` (they become top-level issues) " +
+              "or `children=delete` (they are deleted too); otherwise 409 `has_children`.",
+            parameters: [
+              query("children", "What to do with child issues.", { type: "string", enum: ["detach", "delete"] }),
+              skipAutoMoveHeader,
+            ],
+          },
+        ),
       },
       "/projects/{projectId}/issues/{number}/comments": {
         parameters: [projectId, issueNumber],
@@ -252,10 +315,10 @@ export function buildOpenApiSpec() {
       },
       "/projects/{projectId}/issues/{number}/subtasks": {
         parameters: [projectId, issueNumber],
-        get: op("Subtasks", "List subtasks", { 200: { description: "In checklist order.", content: dataOf({ type: "array", items: ref("Subtask") }) }, ...errors(404) }),
+        get: op("Subtasks", "List subtasks (legacy checklist)", { 200: { description: "In checklist order.", content: dataOf({ type: "array", items: ref("Subtask") }) }, ...errors(404) }),
         post: op(
           "Subtasks",
-          "Add a subtask",
+          "Add a subtask (legacy checklist)",
           { 201: { description: "Created at the end of the checklist.", content: dataOf(ref("Subtask")) }, ...errors(400, 404) },
           {
             requestBody: body({
@@ -275,7 +338,7 @@ export function buildOpenApiSpec() {
         parameters: [projectId, issueNumber, param("subtaskId", "Subtask id.")],
         patch: op(
           "Subtasks",
-          "Rename, describe or check/uncheck a subtask",
+          "Rename, describe or check/uncheck a subtask (legacy checklist)",
           { 200: { description: "Updated.", content: dataOf(ref("Subtask")) }, ...errors(400, 404) },
           {
             requestBody: body({
@@ -289,7 +352,7 @@ export function buildOpenApiSpec() {
             }),
           },
         ),
-        delete: op("Subtasks", "Delete a subtask", { 204: { description: "Deleted." }, ...errors(404) }),
+        delete: op("Subtasks", "Delete a subtask (legacy checklist)", { 204: { description: "Deleted." }, ...errors(404) }),
       },
       "/projects/{projectId}/epics": {
         parameters: [projectId],
@@ -454,10 +517,27 @@ export function buildOpenApiSpec() {
               description: "null = backlog.",
               properties: { id: str(), name: str(), status: ref("SprintStatus") },
             }),
-            subtasks: { type: "array", items: ref("Subtask") },
+            subtasks: { type: "array", items: ref("Subtask"), description: "Legacy checklist items." },
+            parent: nullable({
+              type: "object",
+              description: "The parent issue when this is a child issue (subtask).",
+              properties: { number: { type: "integer" }, title: str() },
+            }),
+            childOrder: nullable({ type: "integer", description: "Position among the parent's children; null for top-level issues." }),
+            children: { type: "array", items: ref("ChildIssue"), description: "Child issues (subtasks), in child order." },
             commentCount: { type: "integer" },
             createdAt: dateTime,
             updatedAt: dateTime,
+          },
+        },
+        ChildIssue: {
+          type: "object",
+          properties: {
+            number: { type: "integer" },
+            title: str(),
+            status: ref("IssueStatus"),
+            priority: ref("IssuePriority"),
+            order: { type: "integer", description: "Position among its siblings, 0-based." },
           },
         },
         Subtask: {

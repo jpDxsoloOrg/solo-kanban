@@ -21,6 +21,7 @@ import { updateIssue } from "@/actions/update-issue";
 import { createEpic } from "@/actions/epic-actions";
 import { MarkdownPreview } from "./MarkdownPreview";
 import { SubtaskList } from "./SubtaskList";
+import { ChildIssueList } from "./ChildIssueList";
 import { LocalDate } from "@/components/common/LocalDate";
 import { useSavedCopyAt } from "@/components/pwa/saved-copy";
 
@@ -404,8 +405,18 @@ export function IssueDetailModal({ issue, projectId, epics, onClose, onUpdate }:
           </TabsContent>
         </Tabs>
 
-        {/* Subtasks */}
-        <SubtaskList issueId={issue.id} subtasks={issue.subtasks} />
+        {/* Subtasks (child issues; one level only) and the legacy checklist */}
+        {!issue.parent && (
+          <ChildIssueList parentId={issue.id} projectId={projectId} childIssues={issue.children ?? []} />
+        )}
+        {issue.subtasks.length > 0 && (
+          <SubtaskList
+            issueId={issue.id}
+            subtasks={issue.subtasks}
+            heading="Checklist (old subtasks)"
+            allowAdd={false}
+          />
+        )}
 
         {/* Footer */}
         <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border pt-3">

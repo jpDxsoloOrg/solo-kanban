@@ -7,7 +7,19 @@ export type IssueWithRelations = Issue & {
   sprint?: Sprint | null;
   /** Included on the board so cards can show a comment count. */
   _count?: { comments: number };
+  /** The parent, when this issue is a child issue (subtask). */
+  parent?: ParentSummary | null;
+  /** Child issues (subtasks), in child order. */
+  children?: ChildIssueSummary[];
 };
+
+/** A child issue as its parent lists it. */
+export type ChildIssueSummary = Pick<
+  Issue,
+  "id" | "number" | "title" | "status" | "priority" | "childOrder"
+>;
+
+export type ParentSummary = Pick<Issue, "id" | "number" | "title">;
 
 /** A top-level comment with its (one level deep) replies, oldest first. */
 export type CommentWithReplies = Comment & {

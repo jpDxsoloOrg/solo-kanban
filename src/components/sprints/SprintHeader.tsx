@@ -9,6 +9,7 @@ import { CompleteSprintDialog } from "./CompleteSprintDialog";
 import { DaysLeft } from "./DaysLeft";
 import { ProgressBar } from "./ProgressBar";
 import { SprintFormModal } from "./SprintFormModal";
+import { ShowSubtasksToggle } from "@/components/board/subtask-visibility";
 
 export interface SprintHeaderProps {
   /** The active sprint shown on the board. */
@@ -18,13 +19,21 @@ export interface SprintHeaderProps {
   projectId: string;
   /** Planned sprints, offered as roll-over targets when completing. */
   plannedSprints: SprintWithCounts[];
+  /** Offer the "Show subtasks" switch (the sprint has child issues). */
+  showSubtasksToggle?: boolean;
 }
 
 /**
  * Compact sprint summary above the board: name, dates and days left,
  * progress, an expandable goal, and the Edit / Complete sprint actions.
  */
-export function SprintHeader({ sprint, issues, projectId, plannedSprints }: SprintHeaderProps) {
+export function SprintHeader({
+  sprint,
+  issues,
+  projectId,
+  plannedSprints,
+  showSubtasksToggle = false,
+}: SprintHeaderProps) {
   const [goalExpanded, setGoalExpanded] = useState(false);
   const [editing, setEditing] = useState(false);
   const [completing, setCompleting] = useState(false);
@@ -65,6 +74,7 @@ export function SprintHeader({ sprint, issues, projectId, plannedSprints }: Spri
         </div>
 
         <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
+          {showSubtasksToggle && <ShowSubtasksToggle />}
           <Button
             intent="ghost"
             size="sm"

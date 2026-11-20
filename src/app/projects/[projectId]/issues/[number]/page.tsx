@@ -5,6 +5,7 @@ import { Sidebar } from "@/components/layout/Sidebar";
 import { getProjects } from "@/actions/project-actions";
 import { getComments } from "@/actions/comment-actions";
 import { IssueView } from "@/components/board/IssueView";
+import { issueViewInclude } from "@/lib/issue-include";
 
 interface IssuePageProps {
   params: Promise<{ projectId: string; number: string }>;
@@ -23,12 +24,7 @@ export default async function IssuePage({ params }: IssuePageProps) {
     }),
     prisma.issue.findUnique({
       where: { projectId_number: { projectId, number: numericNumber } },
-      include: {
-        epic: true,
-        sprint: true,
-        subtasks: { orderBy: { order: "asc" } },
-        _count: { select: { comments: true } },
-      },
+      include: issueViewInclude,
     }),
     // Sprints an issue can be moved into (completed sprints are history).
     prisma.sprint.findMany({

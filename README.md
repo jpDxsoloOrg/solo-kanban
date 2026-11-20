@@ -141,5 +141,20 @@ curl -X POST -H "Authorization: Bearer $KEY" -H "Content-Type: application/json"
 ```
 
 Issues are addressed by their number within the project (the `#12` shown on
-the board). Successful responses are `{ "data": ... }`; errors are
+the board).
+
+### Subtasks (child issues)
+
+Subtasks are full issues linked to a parent, like Jira sub-tasks (one level
+deep). Create one with `"parentNumber": 12`; it inherits the parent's sprint
+and epic. Issue responses include `parent` and `children`, and the list
+endpoint takes `parent=<number>`, `topLevel=true` and `includeChildren=true`.
+A parent follows its children forward: when a child starts, an Open parent
+moves to In progress; when every child is Done, the parent moves to Review.
+Send `X-Skip-Parent-Auto-Move: true` to skip that for one request. Deleting a
+parent needs `?children=detach` or `?children=delete`.
+
+The older checklist subtasks (`/issues/{number}/subtasks`) still work. To
+convert them into child issues, see `scripts/convert-subtasks-to-children.ts`
+(`npx tsx scripts/convert-subtasks-to-children.ts --help`). Successful responses are `{ "data": ... }`; errors are
 `{ "error": { "code": "...", "message": "..." } }` with a matching HTTP status.

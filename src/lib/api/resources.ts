@@ -49,6 +49,19 @@ export async function requireIssueId(projectId: string, number: number): Promise
   return issue.id;
 }
 
+/** An issue's id, looked up by number, for fields like `parentNumber` (400 when missing). */
+export async function issueIdForField(projectId: string, number: unknown, field: string): Promise<string> {
+  if (typeof number !== "number" || !Number.isInteger(number) || number < 1 || number > 2_147_483_647) {
+    throw badRequest(`"${field}" must be an issue number.`);
+  }
+  const issue = await prisma.issue.findUnique({
+    where: { projectId_number: { projectId, number } },
+    select: { id: true },
+  });
+  if (!issue) throw badRequest(`"${field}": issue #${number} doesn't exist in this project.`);
+  return issue.id;
+}
+
 export async function requireEpic(projectId: string, epicId: string) {
   const epic = await prisma.epic.findUnique({ where: { id: epicId } });
   if (!epic || epic.projectId !== projectId) throw notFound("Epic");
@@ -145,6 +158,11 @@ export const issueInclude = {
   epic: { select: { id: true, name: true, color: true } },
   sprint: { select: { id: true, name: true, status: true } },
   subtasks: { orderBy: { order: "asc" } },
+  parent: { select: { number: true, title: true } },
+  children: {
+    select: { number: true, title: true, status: true, priority: true, childOrder: true },
+    orderBy: [{ childOrder: "asc" }, { number: "asc" }],
+  },
   _count: { select: { comments: true } },
 } satisfies Prisma.IssueInclude;
 
@@ -165,7 +183,20 @@ export function issueJson(issue: IssueRecord) {
     epic: issue.epic,
     /** null = backlog. */
     sprint: issue.sprint,
+    /** Legacy checklist items (being replaced by child issues). */
     subtasks: issue.subtasks.map(subtaskJson),
+    /** The parent issue when this is a child issue (subtask), else null. */
+    parent: issue.parent,
+    /** Position among the parent's children, 0-based; null for top-level issues. */
+    childOrder: issue.parentId ? issue.childOrder : null,
+    /** Child issues (subtasks), in child order. */
+    children: issue.children.map((child) => ({
+      number: child.number,
+      title: child.title,
+      status: child.status,
+      priority: child.priority,
+      order: child.childOrder,
+    })),
     commentCount: issue._count.comments,
     createdAt: issue.createdAt,
     updatedAt: issue.updatedAt,

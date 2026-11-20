@@ -16,9 +16,22 @@ import { useServerState } from "@/components/live/useServerState";
 interface SubtaskListProps {
   issueId: string;
   subtasks: Subtask[];
+  /** Section heading. */
+  heading?: string;
+  /** Show the "Add a subtask" form (off for the legacy checklist). */
+  allowAdd?: boolean;
 }
 
-export function SubtaskList({ issueId, subtasks: serverSubtasks }: SubtaskListProps) {
+/**
+ * The legacy checklist. Subtasks are now child issues (ChildIssueList);
+ * existing checklist items show here until they are converted.
+ */
+export function SubtaskList({
+  issueId,
+  subtasks: serverSubtasks,
+  heading = "Subtasks",
+  allowAdd = true,
+}: SubtaskListProps) {
   const sortedServerSubtasks = useMemo(
     () => [...serverSubtasks].sort((a, b) => a.order - b.order),
     [serverSubtasks]
@@ -141,7 +154,7 @@ export function SubtaskList({ issueId, subtasks: serverSubtasks }: SubtaskListPr
     <div>
       {/* Header with progress */}
       <div className="flex items-center justify-between mb-2">
-        <h4 className="text-sm font-medium text-foreground">Subtasks</h4>
+        <h4 className="text-sm font-medium text-foreground">{heading}</h4>
         {subtasks.length > 0 && (
           <span className="text-xs text-muted-foreground">
             {completed}/{subtasks.length} done
@@ -179,6 +192,8 @@ export function SubtaskList({ issueId, subtasks: serverSubtasks }: SubtaskListPr
       )}
 
       {/* Add subtask input */}
+      {allowAdd && (
+      <>
       <div className="flex items-center gap-2 mt-2">
         <div className="min-w-0 flex-1">
           <Input
@@ -218,6 +233,8 @@ export function SubtaskList({ issueId, subtasks: serverSubtasks }: SubtaskListPr
         >
           + Add a description
         </button>
+      )}
+      </>
       )}
     </div>
   );

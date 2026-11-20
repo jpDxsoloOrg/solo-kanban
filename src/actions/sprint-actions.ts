@@ -10,6 +10,7 @@ import {
   moveIssuesToSprint,
   ORDER_TRANSACTION_OPTIONS,
 } from "@/lib/issue-order";
+import { unfinishedChildIds } from "@/lib/issue-hierarchy";
 import {
   addDays,
   DEFAULT_SPRINT_LENGTH_DAYS,
@@ -326,10 +327,14 @@ export async function completeSprint(
         data: { status: "COMPLETED", completedAt: new Date() },
       });
 
+      // Unfinished subtasks go where their parent goes, even ones planned
+      // into another sprint or left in the backlog.
+      const incompleteIds = incomplete.map((i) => i.id);
+      const followers = await unfinishedChildIds(tx, incompleteIds);
       const movedIssues = await moveIssuesToSprint(
         tx,
         sprint.projectId,
-        incomplete.map((i) => i.id),
+        [...new Set([...incompleteIds, ...followers])],
         nextSprint?.id ?? null,
       );
 
@@ -443,7 +448,9 @@ export async function moveIssueToSprint(
         }
       }
 
-      await moveIssuesToSprint(tx, issue.projectId, [issueId], sprintId);
+      // A parent takes its unfinished subtasks with it.
+      const followers = await unfinishedChildIds(tx, [issueId]);
+      await moveIssuesToSprint(tx, issue.projectId, [issueId, ...followers], sprintId);
       return issue.projectId;
     }, ORDER_TRANSACTION_OPTIONS);
 
@@ -501,7 +508,11 @@ export async function moveIssuesToSprintBulk(
         .filter((issue) => !(issue.sprint?.status === "COMPLETED" && issue.status === "DONE"))
         .map((issue) => issue.id);
 
+      // Parents take their unfinished subtasks with them. Only the issues
+      // that were picked count towards "moved"/"skipped".
+      const followers = (await unfinishedChildIds(tx, movable)).filter((id) => !movable.includes(id));
       const moved = await moveIssuesToSprint(tx, projectId, movable, sprintId);
+      await moveIssuesToSprint(tx, projectId, followers, sprintId);
       return { moved, skipped: ids.length - moved };
     }, ORDER_TRANSACTION_OPTIONS);
 

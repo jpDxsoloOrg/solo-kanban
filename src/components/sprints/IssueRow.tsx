@@ -18,10 +18,15 @@ import {
 
 export type IssueRowIssue = Pick<
   Issue,
-  "id" | "number" | "title" | "status" | "priority" | "sprintId"
+  "id" | "number" | "title" | "status" | "priority" | "sprintId" | "parentId"
 > & {
   epic: Pick<Epic, "name" | "color"> | null;
+  /** The parent of a child issue (subtask). */
+  parent: Pick<Issue, "number" | "title"> | null;
+  /** Child issues' statuses, for the "3/8" progress chip. */
+  children: Pick<Issue, "status">[];
 };
+
 
 export type MoveTarget = Pick<Sprint, "id" | "name" | "status">;
 
@@ -75,6 +80,7 @@ export function IssueRow({ issue, projectId, moveTargets, selected = false, onSe
     };
   }, []);
 
+  const doneChildren = issue.children.filter((child) => child.status === "DONE").length;
   const otherTargets = moveTargets?.filter((target) => target.id !== issue.sprintId) ?? [];
   const options = [
     ...(issue.sprintId !== null ? [{ value: BACKLOG, label: "Backlog" }] : []),
@@ -135,11 +141,29 @@ export function IssueRow({ issue, projectId, moveTargets, selected = false, onSe
           href={`/projects/${projectId}/issues/${issue.number}`}
           className={`min-w-0 flex-1 rounded py-0.5 text-sm font-medium text-foreground [overflow-wrap:anywhere] hover:underline ${focusRingClass}`}
         >
+          {issue.parent && (
+            <span
+              className="mr-1 font-normal text-muted-foreground"
+              title={`Subtask of #${issue.parent.number} ${issue.parent.title}`}
+            >
+              <span aria-hidden="true">↳ </span>
+              <span className="sr-only">Subtask of </span>#{issue.parent.number} ·
+            </span>
+          )}
           <span className="font-normal text-muted-foreground">#{issue.number}</span>{" "}
           {issue.title}
         </Link>
 
         <div className="flex min-w-0 flex-wrap items-center gap-1.5 sm:flex-nowrap sm:justify-end">
+          {issue.children.length > 0 && (
+            <span
+              className={`${chipClass} gap-1 bg-muted font-normal tabular-nums text-muted-foreground`}
+              title={`${doneChildren} of ${issue.children.length} subtasks done`}
+            >
+              <span className="sr-only">Subtasks done: </span>
+              {doneChildren}/{issue.children.length}
+            </span>
+          )}
           <span className={`${chipClass} ${issueStatusClass[issue.status]}`}>
             {issueStatusLabel[issue.status]}
           </span>
