@@ -2,7 +2,9 @@ import Link from "next/link";
 import type { IssuePriority, Sprint } from "@prisma/client";
 import { daysRemaining, formatSprintRangeWithYear, toDateInputValue } from "@/lib/sprint-dates";
 import { DaysLeft } from "./DaysLeft";
-import { IssueRow, type IssueRowIssue } from "./IssueRow";
+import type { IssueRowIssue } from "./IssueRow";
+import { ReportIssueList } from "./ReportIssueList";
+import { ShowSubtasksToggle } from "@/components/board/subtask-visibility";
 import { LocalDate } from "@/components/common/LocalDate";
 import { ProgressBar } from "./ProgressBar";
 import {
@@ -152,10 +154,13 @@ export function SprintReport({ sprint, projectId, issues }: SprintReportProps) {
         )}
 
         <section aria-labelledby="report-issues-heading" className="flex flex-col gap-3">
-          <h2 id="report-issues-heading" className="text-base font-semibold text-foreground">
-            {isCompleted ? "Completed issues" : "Issues"}{" "}
-            <span className="font-normal text-muted-foreground">({total})</span>
-          </h2>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h2 id="report-issues-heading" className="text-base font-semibold text-foreground">
+              {isCompleted ? "Completed issues" : "Issues"}{" "}
+              <span className="font-normal text-muted-foreground">({total})</span>
+            </h2>
+            {issues.some((issue) => issue.parentId !== null) && <ShowSubtasksToggle />}
+          </div>
           {total === 0 ? (
             <p className="rounded-lg border border-dashed border-border px-4 py-6 text-center text-sm text-muted-foreground">
               {isCompleted
@@ -163,7 +168,7 @@ export function SprintReport({ sprint, projectId, issues }: SprintReportProps) {
                 : "No issues in this sprint yet. Add some from the backlog."}
             </p>
           ) : isCompleted ? (
-            <IssueList issues={issues} projectId={projectId} />
+            <ReportIssueList issues={issues} all={issues} projectId={projectId} />
           ) : (
             ISSUE_STATUS_ORDER.map((status) => {
               const group = issues.filter((issue) => issue.status === status);
@@ -173,7 +178,7 @@ export function SprintReport({ sprint, projectId, issues }: SprintReportProps) {
                   <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                     {issueStatusLabel[status]} · {group.length}
                   </h3>
-                  <IssueList issues={group} projectId={projectId} />
+                  <ReportIssueList issues={group} all={issues} projectId={projectId} />
                 </div>
               );
             })
@@ -242,15 +247,6 @@ function Breakdown({ title, rows, showDone }: { title: string; rows: BreakdownRo
   );
 }
 
-function IssueList({ issues, projectId }: { issues: ReportIssue[]; projectId: string }) {
-  return (
-    <ul className="divide-y divide-border overflow-hidden rounded-lg border border-border bg-background">
-      {issues.map((issue) => (
-        <IssueRow key={issue.id} issue={issue} projectId={projectId} />
-      ))}
-    </ul>
-  );
-}
 
 function breakdownByEpic(issues: ReportIssue[]): BreakdownRow[] {
   const rows = new Map<string, BreakdownRow>();

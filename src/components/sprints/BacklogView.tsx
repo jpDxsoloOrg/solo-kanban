@@ -13,6 +13,12 @@ import { IssueRow, type IssueRowIssue, type MoveTarget } from "./IssueRow";
 import { SprintFormModal } from "./SprintFormModal";
 import { StartSprintDialog } from "./StartSprintDialog";
 import {
+  hasSubtasks,
+  ShowSubtasksToggle,
+  useShowSubtasks,
+  visibleIssues,
+} from "@/components/board/subtask-visibility";
+import {
   chipClass,
   focusRingClass,
   nativeSelectClass,
@@ -41,12 +47,28 @@ export interface BacklogViewProps {
  */
 export function BacklogView({
   projectId,
-  activeSprint,
-  plannedSprints,
-  backlogIssues,
+  activeSprint: allActiveSprint,
+  plannedSprints: allPlannedSprints,
+  backlogIssues: allBacklogIssues,
   backlogDoneCount,
 }: BacklogViewProps) {
   const router = useRouter();
+  // Subtasks listed on this page next to their parent are hidden unless
+  // "Show subtasks" is on (the parent's row counts them).
+  const showSubtasks = useShowSubtasks();
+  const everyIssue = [
+    ...(allActiveSprint?.issues ?? []),
+    ...allPlannedSprints.flatMap((sprint) => sprint.issues),
+    ...allBacklogIssues,
+  ];
+  const shown = (issues: IssueRowIssue[]) => visibleIssues(issues, showSubtasks, everyIssue);
+  const activeSprint = allActiveSprint && { ...allActiveSprint, issues: shown(allActiveSprint.issues) };
+  const plannedSprints = allPlannedSprints.map((sprint) => ({ ...sprint, issues: shown(sprint.issues) }));
+  const backlogIssues = shown(allBacklogIssues);
+  /** All of a sprint's issues, hidden subtasks included. */
+  const issueTotal = (sprint: BacklogSprint) =>
+    (allPlannedSprints.find((planned) => planned.id === sprint.id)?.issues.length ?? sprint.issues.length) +
+    sprint.doneCount;
   const [creating, setCreating] = useState(false);
   const [editing, setEditing] = useState<Sprint | null>(null);
   const [starting, setStarting] = useState<BacklogSprint | null>(null);
@@ -117,9 +139,12 @@ export function BacklogView({
         <header>
           <div className="flex items-center justify-between gap-3">
             <h1 className="text-xl font-semibold text-foreground">Backlog</h1>
-            <Button intent="primary" onClick={() => setCreating(true)}>
-              New sprint
-            </Button>
+            <div className="flex items-center gap-2">
+              {hasSubtasks(everyIssue) && <ShowSubtasksToggle />}
+              <Button intent="primary" onClick={() => setCreating(true)}>
+                New sprint
+              </Button>
+            </div>
           </div>
           <p className="mt-1 text-sm text-muted-foreground">
             Plan upcoming sprints and park work for later.
@@ -255,7 +280,7 @@ export function BacklogView({
         open={starting !== null}
         onClose={() => setStarting(null)}
         projectId={projectId}
-        sprint={starting && { ...starting, _count: { issues: starting.issues.length + starting.doneCount } }}
+        sprint={starting && { ...starting, _count: { issues: issueTotal(starting) } }}
       />
       <AlertDialog
         open={deleting !== null}
@@ -265,8 +290,8 @@ export function BacklogView({
         onConfirm={handleDelete}
         title={deleting ? `Delete ${deleting.name}?` : "Delete sprint?"}
         description={
-          deleting && deleting.issues.length + deleting.doneCount > 0
-            ? `Its ${pluralize(deleting.issues.length + deleting.doneCount, "issue")} will go back to the backlog. This can't be undone.`
+          deleting && issueTotal(deleting) > 0
+            ? `Its ${pluralize(issueTotal(deleting), "issue")} will go back to the backlog. This can't be undone.`
             : "This sprint has no issues. This can't be undone."
         }
         confirmLabel="Delete sprint"

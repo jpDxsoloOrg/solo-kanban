@@ -5,6 +5,7 @@ import { Sidebar } from "@/components/layout/Sidebar";
 import { Board } from "@/components/board/Board";
 import { NoActiveSprint } from "@/components/sprints/NoActiveSprint";
 import { getProjects } from "@/actions/project-actions";
+import { childrenInclude, parentSummarySelect } from "@/lib/issue-include";
 
 interface BoardPageProps {
   params: Promise<{ projectId: string }>;
@@ -42,6 +43,8 @@ export default async function BoardPage({ params, searchParams }: BoardPageProps
         include: {
           epic: true,
           subtasks: true,
+          parent: { select: parentSummarySelect },
+          children: childrenInclude,
           _count: { select: { comments: true } },
         },
         orderBy: { order: "asc" },

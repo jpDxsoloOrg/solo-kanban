@@ -8,18 +8,22 @@ import {
   normalizeColumn,
   ORDER_TRANSACTION_OPTIONS,
 } from "@/lib/issue-order";
+import { syncParentStatus, type ParentAutoMove } from "@/lib/issue-hierarchy";
 
 /**
  * Drag-and-drop move on the board. Orders are scoped to the issue's own
  * sprint (or the backlog), so moving never disturbs other sprints' columns.
+ *
+ * Resolves to the parent this move pushed forward (a subtask started, or
+ * the last one finished), if any, so the board can show it.
  */
 export async function moveIssue(
   issueId: string,
   newStatus: IssueStatus,
   newOrder: number
-) {
+): Promise<ParentAutoMove | null> {
   // Use a transaction to keep order values consistent
-  await prisma.$transaction(async (tx) => {
+  return prisma.$transaction(async (tx): Promise<ParentAutoMove | null> => {
     const owner = await tx.issue.findUnique({ where: { id: issueId }, select: { projectId: true } });
     if (!owner) throw new Error("Issue not found");
     await lockProjectOrdering(tx, owner.projectId);
@@ -49,7 +53,7 @@ export async function moveIssue(
 
     // If nothing changed, skip
     if (oldStatus === newStatus && oldOrder === newOrder) {
-      return;
+      return null;
     }
 
     // If moving to a different column, close the gap in the old column
@@ -125,5 +129,13 @@ export async function moveIssue(
     if (oldStatus !== newStatus) {
       await normalizeColumn(tx, { ...column, status: oldStatus });
     }
+
+    // A subtask's parent follows it forward.
+    if (oldStatus === newStatus) return null;
+    const { parentId } = await tx.issue.findUniqueOrThrow({
+      where: { id: issueId },
+      select: { parentId: true },
+    });
+    return parentId ? syncParentStatus(tx, parentId) : null;
   }, ORDER_TRANSACTION_OPTIONS);
 }

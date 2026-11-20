@@ -9,6 +9,7 @@ import { IssuePriority } from "@prisma/client";
 import { IssueDetailModal } from "./IssueDetailModal";
 import { MarkdownPreview } from "./MarkdownPreview";
 import { SubtaskList } from "./SubtaskList";
+import { ChildIssueList } from "./ChildIssueList";
 import { LocalDate } from "@/components/common/LocalDate";
 import { STATUS_LABELS } from "./columns";
 import { getIssue } from "@/actions/get-issue";
@@ -68,14 +69,29 @@ export function IssueView({ issue: serverIssue, projectId, comments, sprints, ep
   return (
     <div className="h-full overflow-y-auto">
       <div className="mx-auto max-w-3xl px-4 py-4 sm:p-6">
-      <div className="mb-3 sm:mb-4">
+      <nav aria-label="Breadcrumb" className="mb-3 flex min-w-0 flex-wrap items-center gap-x-1 text-sm text-muted-foreground sm:mb-4">
         <Link
           href={`/projects/${projectId}/board`}
-          className="-mx-1 inline-flex min-h-9 items-center rounded px-1 text-sm text-muted-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="-mx-1 inline-flex min-h-9 items-center rounded px-1 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
           ← Back to board
         </Link>
-      </div>
+        {issue.parent && (
+          <>
+            <span aria-hidden="true" className="px-1">/</span>
+            <Link
+              href={`/projects/${projectId}/issues/${issue.parent.number}`}
+              className="-mx-1 inline-flex min-h-9 min-w-0 max-w-full items-center gap-1 rounded px-1 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              title={`Parent: #${issue.parent.number} ${issue.parent.title}`}
+            >
+              <span className="shrink-0 font-medium text-foreground/80">#{issue.parent.number}</span>
+              <span className="truncate">{issue.parent.title}</span>
+            </Link>
+            <span aria-hidden="true" className="px-1">/</span>
+            <span aria-current="page">#{issue.number}</span>
+          </>
+        )}
+      </nav>
 
       <div className="mb-4 flex items-start justify-between gap-3 sm:gap-4">
         <h1 className="min-w-0 text-xl font-semibold leading-tight wrap-anywhere sm:text-2xl">
@@ -88,6 +104,11 @@ export function IssueView({ issue: serverIssue, projectId, comments, sprints, ep
       </div>
 
       <div className="mb-6 flex min-w-0 flex-wrap items-center gap-2">
+        {issue.parent && (
+          <Badge intent="default" className="shrink-0">
+            Subtask of #{issue.parent.number}
+          </Badge>
+        )}
         <Badge intent="default">{STATUS_LABELS[issue.status]}</Badge>
         <span
           className={`text-xs font-medium px-2 py-0.5 rounded ${priorityClass[issue.priority]}`}
@@ -123,7 +144,24 @@ export function IssueView({ issue: serverIssue, projectId, comments, sprints, ep
         )}
       </div>
 
-      <SubtaskList issueId={issue.id} subtasks={issue.subtasks} />
+      <div className="flex flex-col gap-6 empty:hidden">
+        {/* One level only: a subtask can't have subtasks. */}
+        {!issue.parent && (
+          <ChildIssueList
+            parentId={issue.id}
+            projectId={projectId}
+            childIssues={issue.children ?? []}
+          />
+        )}
+        {issue.subtasks.length > 0 && (
+          <SubtaskList
+            issueId={issue.id}
+            subtasks={issue.subtasks}
+            heading="Checklist (old subtasks)"
+            allowAdd={false}
+          />
+        )}
+      </div>
 
       <CommentThread issueId={issue.id} initialComments={comments} />
 

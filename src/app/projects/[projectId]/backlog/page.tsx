@@ -3,6 +3,8 @@ import { notFound } from "next/navigation";
 import { AppShell } from "@/components/layout/AppShell";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { BacklogView } from "@/components/sprints/BacklogView";
+// Only what an issue row shows; keeps descriptions out of the client payload.
+import { issueRowSelect } from "@/lib/issue-include";
 import { getProjects } from "@/actions/project-actions";
 
 interface BacklogPageProps {
@@ -12,16 +14,6 @@ interface BacklogPageProps {
 // Postgres sorts the IssueStatus enum in declaration order (Open → Done).
 const issueOrder = [{ status: "asc" as const }, { order: "asc" as const }, { number: "asc" as const }];
 
-// Only what an issue row shows; keeps descriptions out of the client payload.
-const issueRowSelect = {
-  id: true,
-  number: true,
-  title: true,
-  status: true,
-  priority: true,
-  sprintId: true,
-  epic: { select: { name: true, color: true } },
-} as const;
 
 // The backlog page plans remaining work: finished issues stay on the board
 // and sprint pages, and are only counted here.

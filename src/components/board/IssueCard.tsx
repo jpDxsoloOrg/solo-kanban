@@ -35,8 +35,13 @@ export function IssueCard({ issue, onMoveIssue, onSelect, onMoveToStatus, moveDi
   const [isDragging, setIsDragging] = useState(false);
   const [closestEdge, setClosestEdge] = useState<Edge | null>(null);
   const priority = priorityConfig[issue.priority];
-  const completedSubtasks = issue.subtasks.filter((s) => s.completed).length;
-  const totalSubtasks = issue.subtasks.length;
+  // Child issues when it has any; otherwise the legacy checklist.
+  const children = issue.children ?? [];
+  const usesChildren = children.length > 0;
+  const completedSubtasks = usesChildren
+    ? children.filter((child) => child.status === "DONE").length
+    : issue.subtasks.filter((s) => s.completed).length;
+  const totalSubtasks = usesChildren ? children.length : issue.subtasks.length;
   const commentCount = issue._count?.comments ?? 0;
 
   useEffect(() => {
@@ -129,6 +134,21 @@ export function IssueCard({ issue, onMoveIssue, onSelect, onMoveToStatus, moveDi
         }`}
       >
         <CardContent className="p-3">
+          {/* A subtask names its parent */}
+          {issue.parent && (
+            <p
+              className="mb-1 flex min-w-0 items-center gap-1 text-xs text-muted-foreground"
+              title={`Subtask of #${issue.parent.number} ${issue.parent.title}`}
+            >
+              <svg aria-hidden="true" viewBox="0 0 16 16" className="h-3 w-3 shrink-0" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M4 2.5v6.5a2 2 0 0 0 2 2h6M9.5 8.5 12 11l-2.5 2.5" />
+              </svg>
+              <span className="sr-only">Subtask of </span>
+              <span className="shrink-0 font-medium">#{issue.parent.number}</span>
+              <span className="truncate">{issue.parent.title}</span>
+            </p>
+          )}
+
           {/* Title: a real link so keyboard users can open the issue. It is
               not draggable itself, so dragging still picks up the card. */}
           <h3 className={`text-sm font-medium leading-snug wrap-anywhere ${issue.status === "DONE" ? "line-through text-muted-foreground" : ""}`}>
@@ -204,7 +224,10 @@ export function IssueCard({ issue, onMoveIssue, onSelect, onMoveToStatus, moveDi
 
           {/* Subtask progress */}
           {totalSubtasks > 0 && (
-            <div className="mt-2 flex items-center gap-2">
+            <div
+              className="mt-2 flex items-center gap-2"
+              title={`${completedSubtasks} of ${totalSubtasks} subtasks done`}
+            >
               <div className="flex-1 h-1 bg-muted rounded-full overflow-hidden">
                 <div
                   className="h-full bg-green-500 rounded-full transition-all"
@@ -213,7 +236,8 @@ export function IssueCard({ issue, onMoveIssue, onSelect, onMoveToStatus, moveDi
                   }}
                 />
               </div>
-              <span className="text-xs text-muted-foreground">
+              <span className="text-xs tabular-nums text-muted-foreground">
+                <span className="sr-only">Subtasks done: </span>
                 {completedSubtasks}/{totalSubtasks}
               </span>
             </div>

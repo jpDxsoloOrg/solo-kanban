@@ -13,6 +13,8 @@ import { ShortcutsDialog } from "./ShortcutsDialog";
 import { BOARD_COLUMNS, STATUS_DOT_CLASSES, STATUS_LABELS, columnDomId } from "./columns";
 import { holdLiveRefresh } from "@/components/live/live-refresh-hold";
 import { useServerState } from "@/components/live/useServerState";
+import { hasSubtasks, useShowSubtasks, visibleIssues } from "./subtask-visibility";
+import type { ParentAutoMove } from "@/lib/issue-hierarchy";
 
 const COLUMNS = BOARD_COLUMNS;
 
@@ -64,6 +66,7 @@ export function Board({
     () => lastActiveStatus.get(sprint.id) ?? "OPEN"
   );
   const [toast, setToast] = useState<Toast | null>(null);
+  const showSubtasks = useShowSubtasks();
 
   const setActiveStatus = useCallback(
     (status: IssueStatus) => {
@@ -163,14 +166,34 @@ export function Board({
         const otherIssues = without.filter(
           (i) => i.status !== newStatus && i.status !== issue.status
         );
-        return [...otherIssues, ...sourceColumn, ...reindexed];
+        // A subtask's parent card counts it: keep its progress in step.
+        return [...otherIssues, ...sourceColumn, ...reindexed].map((item) =>
+          item.id === issue.parentId && item.children
+            ? {
+                ...item,
+                children: item.children.map((child) =>
+                  child.id === issueId ? { ...child, status: newStatus } : child
+                ),
+              }
+            : item
+        );
       });
 
+      let autoMove: ParentAutoMove | null = null;
       try {
-        await moveIssue(issueId, newStatus, newOrder);
+        autoMove = await moveIssue(issueId, newStatus, newOrder);
         // Server data that arrived while saving may predate the move; the
         // next live refresh brings the saved positions.
         skipPendingServerIssues();
+        if (autoMove) {
+          // The parent moved too: show where, and fetch its new position.
+          showToast({
+            tone: "info",
+            message: `Parent #${autoMove.number} moved to ${STATUS_LABELS[autoMove.to]}`,
+            status: autoMove.to,
+          });
+          router.refresh();
+        }
         return true;
       } catch (error) {
         console.error("Failed to move issue:", error);
@@ -186,7 +209,7 @@ export function Board({
         releaseLiveRefresh();
       }
     },
-    [issues, isMoving, setIssues, skipPendingServerIssues, showToast]
+    [issues, isMoving, setIssues, skipPendingServerIssues, showToast, router]
   );
 
   /** "Move" menu: append the card to the end of another column. */
@@ -197,13 +220,13 @@ export function Board({
 
       // End of the whole column, ignoring the epic filter.
       const order = issues.filter((i) => i.status === status).length;
-      const saved = handleMoveIssue(issueId, status, order);
-
+      // The move's own toast (a parent that moved along) replaces this one.
       showToast({
         tone: "info",
         message: `Moved #${issue.number} to ${STATUS_LABELS[status]}`,
         status,
       });
+      const saved = handleMoveIssue(issueId, status, order);
 
       // Keep keyboard focus on the moved card when its column is visible,
       // otherwise on the tab of the column it went to (phones).
@@ -228,13 +251,17 @@ export function Board({
     [setIssues]
   );
 
+  // Subtasks whose parent is on the board are hidden unless "Show subtasks"
+  // is on; the parent's card counts them.
+  const shownIssues = visibleIssues(issues, showSubtasks);
   const issuesByStatus = COLUMNS.map((col) => {
-    const columnIssues = issues
+    const columnIssues = shownIssues
       .filter((issue) => issue.status === col.status)
       .sort((a, b) => a.order - b.order);
     return {
       ...col,
-      totalCount: columnIssues.length,
+      // Drops append after the whole column, hidden cards included.
+      totalCount: issues.filter((issue) => issue.status === col.status).length,
       issues: epicFilter
         ? columnIssues.filter((issue) => issue.epicId === epicFilter)
         : columnIssues,
@@ -263,6 +290,7 @@ export function Board({
         issues={issues}
         projectId={projectId}
         plannedSprints={plannedSprints}
+        showSubtasksToggle={hasSubtasks(issues)}
       />
 
       {/* Phones: one column at a time, picked from a segmented tab bar */}

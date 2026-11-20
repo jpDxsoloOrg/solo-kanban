@@ -222,3 +222,23 @@ export function parseIssueNumber(raw: string): number {
   if (!Number.isInteger(n) || n < 1 || n > 2_147_483_647) throw notFound("Issue");
   return n;
 }
+
+/** A whole-number field; `undefined` when absent. */
+export function intField(body: Json, key: string, { min = 0, max = 1_000_000 } = {}): number | undefined {
+  const value = body[key];
+  if (value === undefined) return undefined;
+  if (typeof value !== "number" || !Number.isInteger(value) || value < min || value > max) {
+    throw badRequest(`"${key}" must be a whole number between ${min} and ${max}.`);
+  }
+  return value;
+}
+
+/** A true/false query parameter; `undefined` when absent. */
+export function booleanParam(req: NextRequest, key: string): boolean | undefined {
+  const raw = req.nextUrl.searchParams.get(key);
+  if (raw === null || raw === "") return undefined;
+  const value = raw.trim().toLowerCase();
+  if (["true", "1", "yes"].includes(value)) return true;
+  if (["false", "0", "no"].includes(value)) return false;
+  throw badRequest(`"${key}" must be true or false.`);
+}
