@@ -95,6 +95,33 @@ such as `https://kanban.example.com`. Without it the server sees itself as
 Removing an address from `ALLOWED_EMAILS` signs that account out on its next
 request. Signing out also clears the pages the app saved for offline use.
 
+## MCP server (Claude)
+
+Solo Kanban is also an [MCP](https://modelcontextprotocol.io) server, so Claude
+can read and manage your board directly. It's hosted by the app at `/api/mcp`
+(Streamable HTTP) and uses the same API keys as the public API, so there's
+nothing to install.
+
+**Claude Code:**
+
+```bash
+claude mcp add --transport http solo-kanban https://<your-domain>/api/mcp \
+  --header "Authorization: Bearer <API key>"
+```
+
+Add `--scope user` to make it available in every project. Then ask things like
+*"What's in the active sprint of Know It Owl?"*, *"Create a high-priority bug
+for … in the backlog"* or *"Move #12 to review and comment that it's ready"*.
+
+**Tools:** `list_projects`, `get_project`, `create_project`, `list_issues`,
+`get_issue` (with comments), `create_issue` (including child issues),
+`update_issue` (status, priority, epic, sprint, parent…), `delete_issue`,
+`add_comment`, `list_epics`, `create_epic`, `list_sprints`, `create_sprint`,
+`start_sprint`, `complete_sprint`.
+
+Each tool calls the matching REST endpoint in-process, so it follows exactly
+the same rules (ordering, sprints, child issues) as the API and the web app.
+
 ## Public API
 
 Solo Kanban has a REST API for reading and changing projects, issues, comments,
